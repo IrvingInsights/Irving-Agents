@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Irving MVP</title>
+  <style>
+    body { font-family: sans-serif; margin: 40px; }
+    textarea { width: 100%; max-width: 600px; }
+    pre { white-space: pre-wrap; background: #f5f5f5; padding: 10px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Irving MVP</h1>
+  <p>Enter a prompt and click <em>Run</em> to send it to the server.</p>
+  <textarea id="prompt" rows="4" cols="80" placeholder="Enter your prompt here..."></textarea><br />
+  <button onclick="runPrompt()">Run</button>
+  <h2>Response</h2>
+  <pre id="result"></pre>
+  <script>
+    async function runPrompt() {
+      const prompt = document.getElementById('prompt').value;
+      const resultElem = document.getElementById('result');
+      resultElem.textContent = 'Running...';
+      try {
+        const response = await fetch('/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+        const data = await response.json();
+        resultElem.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultElem.textContent = 'Error: ' + err.toString();
+      }
+    }
+  </script>
+</body>
+</html>

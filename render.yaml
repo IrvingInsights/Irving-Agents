@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: irving-mvp
+    runtime: python
+    buildCommand: pip install -r requirements-irving-mvp.txt
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker irving_mvp_server:app
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: NOTION_API_TOKEN
+        sync: false
+      - key: NOTION_TASKS_DB_ID
+        sync: false

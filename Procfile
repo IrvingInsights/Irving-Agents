@@ -1,0 +1,1 @@
+web: gunicorn -k uvicorn.workers.UvicornWorker irving_mvp_server:app
