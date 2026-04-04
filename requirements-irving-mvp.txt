@@ -4,3 +4,4 @@ gunicorn
 pydantic
 anthropic
 openai
+notion-client
