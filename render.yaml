@@ -7,9 +7,9 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: OPENAI_API_KEY
+      - key: NOTION_TOKEN
         sync: false
-      - key: NOTION_API_TOKEN
+      - key: NOTION_REVIEW_QUEUE_DB_ID
         sync: false
-      - key: NOTION_TASKS_DB_ID
+      - key: NOTION_CONTEXT_SNAPSHOTS_DB_ID
         sync: false
