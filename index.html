@@ -161,6 +161,9 @@
   }
   .quick-btn:hover { border-color: var(--orange-dim); color: var(--white); background: rgba(245,148,10,0.04); }
   .quick-btn .qicon { font-size: 13px; flex-shrink: 0; }
+  .qloading { font-size: 11px; color: var(--muted); padding: 8px 2px; font-style: italic; }
+  .qp-section-divider { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--muted); padding: 8px 2px 4px; opacity: 0.6; }
 
   /* History */
   .history-list { overflow-y: auto; flex: 1; padding: 8px; }
@@ -550,37 +553,14 @@
       </div>
     </div>
 
-    <!-- Quick Prompts -->
+    <!-- Quick Prompts — generated from live Notion context -->
     <div class="sidebar-section">
-      <div class="sidebar-label">Quick Prompts</div>
-      <div class="quick-prompts">
-        <button class="quick-btn" onclick="sendQuick(`What are my highest-priority tasks across all domains today?`)">
-          <span class="qicon">🎯</span>Today's priorities
-        </button>
-        <button class="quick-btn" onclick="sendQuick(`Give me a weekly focus summary — what's the most important work this week across Irving Insights, Book, and TBK?`)">
-          <span class="qicon">📅</span>Weekly focus
-        </button>
-        <button class="quick-btn" onclick="sendQuick(`What items in my system are overdue or at risk? What should I act on immediately?`)">
-          <span class="qicon">🔥</span>Overdue & at risk
-        </button>
-        <button class="quick-btn" onclick="sendQuick(`Apply the 80/20 rule: what's the 20% of work that will drive 80% of my results this month?`)">
-          <span class="qicon">📊</span>80/20 signal
-        </button>
-        <button class="quick-btn" onclick="sendQuick(`Review my Irving Agents server and suggest next improvements or features I should build.`)">
-          <span class="qicon">⚙️</span>Irving Agents review
-        </button>
-        <button class="quick-btn" onclick="sendQuick(`Generate an AutoCAD script (.scr) for a PeakHinge A-frame: 24-foot span, 12/12 pitch, 32-foot length, 8-foot bays. Include floor plan, front elevation, and side elevation on separate layers.`)">
-          <span class="qicon">📐</span>PeakHinge A-frame drawing
-        </button>
-        <button class="quick-btn" onclick="sendQuick(`Write an AutoLISP routine that draws a parametric A-frame roof profile. Variables: span (default 24ft), pitch ratio (default 12/12), eave height (default 8ft). Should prompt the user for insertion point and all three variables.`)">
-          <span class="qicon">🔧</span>Parametric A-frame AutoLISP
-        </button>
-        <button class="quick-btn" onclick="sendQuick(`Generate an AutoCAD script for a standard site plan: 100x150 foot lot, 25-foot front setback, 10-foot side setbacks, 30-foot rear setback. Show building footprint, driveway, and north arrow.`)">
-          <span class="qicon">🗺️</span>Site plan template
-        </button>
-        <button class="quick-btn" onclick="sendQuick(`Create an AutoLISP routine that draws a structural pintle hinge detail: two 1/4-inch steel plates, 1-inch diameter pin, with dimension annotations and a leader note. Parametric plate width and height.`)">
-          <span class="qicon">🔩</span>Pintle hinge detail
-        </button>
+      <div class="sidebar-label" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Quick Prompts</span>
+        <span id="qpStatus" style="font-size:9px;color:var(--muted);letter-spacing:1px;"></span>
+      </div>
+      <div class="quick-prompts" id="quickPromptsList">
+        <div class="qloading">Loading context…</div>
       </div>
     </div>
 
@@ -1160,6 +1140,114 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
+// ── CONTEXT-DRIVEN QUICK PROMPTS ─────────────────────────
+
+function snapIcon(name) {
+  const n = (name || '').toLowerCase();
+  if (/peakhinge|a-frame|hinge|dwelling/.test(n))     return '🏗';
+  if (/book|writing|uncertainty|resilience/.test(n))  return '✍️';
+  if (/irving insights|consulting|strategy/.test(n))  return '💼';
+  if (/health|condition|wellbeing/.test(n))           return '💪';
+  if (/hockey/.test(n))                               return '🏑';
+  if (/tbk|business.?ops/.test(n))                    return '⚙️';
+  if (/agent|ai.?stack|server/.test(n))               return '🤖';
+  if (/homestead|land/.test(n))                       return '🌲';
+  return '📌';
+}
+
+function shortProjectName(name) {
+  // Strip " — subtitle" or ": subtitle"
+  return (name || '').replace(/\s*[—–:\-]\s*.+$/, '').trim();
+}
+
+function firstSentence(text) {
+  if (!text) return '';
+  // Strip leading numbering like "1. " or "- "
+  const clean = text.replace(/^\d+\.\s*|^[-•]\s*/m, '').trim();
+  // Take up to first sentence-ending punctuation or 90 chars
+  const m = clean.match(/^(.{10,90}?[.!?])\s/);
+  return m ? m[1] : clean.substring(0, 80).trim();
+}
+
+function escapeBacktick(s) {
+  return s.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+}
+
+function makeQBtn(icon, label, prompt) {
+  return `<button class="quick-btn" onclick="sendQuick(\`${escapeBacktick(prompt)}\`)">` +
+    `<span class="qicon">${icon}</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;">${label}</span></button>`;
+}
+
+async function loadContextPrompts() {
+  const list   = document.getElementById('quickPromptsList');
+  const status = document.getElementById('qpStatus');
+
+  try {
+    const res  = await fetch(`${SERVER}/context`, { signal: AbortSignal.timeout(20000) });
+    const data = await res.json();
+    const snaps = data.snapshots || [];
+
+    let html = '';
+
+    // ── Always-present cross-domain prompt ──
+    html += `<div class="qp-section-divider">Right now</div>`;
+    html += makeQBtn('🎯', 'What should I focus on right now?',
+      `Looking across all my active projects and their current state, what single action right now has the highest leverage? Be specific — name the project, the exact next step, and why it matters most.`);
+
+    if (snaps.length === 0) {
+      // Server awake but no snapshots yet
+      html += makeQBtn('📊', '80/20 this week',
+        `Apply the 80/20 rule across all my domains. What is the 20% of work that will drive 80% of results this week? Give me a ranked list with reasoning.`);
+      html += makeQBtn('🔥', 'What is at risk?',
+        `What in my current work is most at risk of stalling or being dropped? Identify the specific blockers and give me concrete actions to address them.`);
+    } else {
+      html += `<div class="qp-section-divider">From your projects</div>`;
+
+      for (const snap of snaps) {
+        const icon      = snapIcon(snap.name);
+        const shortName = shortProjectName(snap.name);
+        const nextMove  = firstSentence(snap.recommended_next_moves || snap.top_3_priorities || '');
+        const stateSnip = (snap.current_state || '').substring(0, 300);
+        const movesSnip = (snap.recommended_next_moves || '').substring(0, 300);
+        const riskSnip  = (snap.risks_blockers || '').substring(0, 150);
+
+        if (!nextMove) continue;
+
+        // Label: "ProjectName: first next move (truncated)"
+        const label = `${shortName}: ${nextMove.length > 42 ? nextMove.substring(0,42)+'…' : nextMove}`;
+
+        // Prompt: grounded in the actual snapshot data
+        const prompt = `Project: ${snap.name}\n\nCurrent state: ${stateSnip}\n\nRecommended next move: ${movesSnip}${riskSnip ? '\n\nRisks/blockers: ' + riskSnip : ''}\n\nHelp me execute this next move. What should I do first, and what's the fastest path to progress today?`;
+
+        html += makeQBtn(icon, label, prompt);
+      }
+
+      // Synthesizer prompt using all loaded context
+      const projectList = snaps.map(s => shortProjectName(s.name)).join(', ');
+      html += `<div class="qp-section-divider">Across all</div>`;
+      html += makeQBtn('⚡', 'Where are the blockers?',
+        `Across ${projectList}: which project has the most critical unresolved blocker right now, and what is the single action that would unblock it?`);
+    }
+
+    list.innerHTML = html;
+    if (snaps.length > 0) {
+      status.textContent = `${snaps.length} live`;
+      status.title = 'Quick prompts loaded from Notion context snapshots';
+    }
+
+  } catch (e) {
+    // Server cold or unreachable — show minimal static fallbacks
+    list.innerHTML =
+      makeQBtn('🎯', 'What should I focus on right now?',
+        `What is the single highest-leverage thing I should be working on right now?`) +
+      makeQBtn('📊', '80/20 this week',
+        `Apply the 80/20 rule across my active projects. What is the 20% that drives 80% of results this week?`) +
+      makeQBtn('🔥', 'What is at risk?',
+        `What in my current work is most at risk of stalling? Name the blockers and the actions to address them.`);
+    status.textContent = 'offline';
+  }
+}
+
 // ── INIT ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('promptInput').focus();
@@ -1179,6 +1267,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const turns = Math.floor(conversationMemory.length / 2);
     showToast(`💬 ${turns} prior turn${turns !== 1 ? 's' : ''} in context`);
   }
+
+  // Load context-driven quick prompts
+  loadContextPrompts();
 });
 </script>
 </body>
