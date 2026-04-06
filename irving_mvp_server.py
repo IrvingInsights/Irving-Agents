@@ -26,7 +26,7 @@ app.add_middleware(
 # ── Config ────────────────────────────────────────────────────────────────────
 NOTION_TOKEN            = os.getenv("NOTION_TOKEN")
 REVIEW_QUEUE_DB_ID      = os.getenv("NOTION_REVIEW_QUEUE_DB_ID")
-CONTEXT_SNAPSHOTS_DB_ID = os.getenv("NOTION_CONTEXT_SNAPSHOTS_DB_ID")
+CONTEXT_SNAPSHOTS_DB_ID = os.getenv("NOTION_CONTEXT_SNAPSHOTS_DB_ID", "dce98293-df3d-48b3-8a29-cfebe2c44125")
 ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY          = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY          = os.getenv("GEMINI_API_KEY")
