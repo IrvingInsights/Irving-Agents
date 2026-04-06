@@ -401,58 +401,81 @@ def build_expert_system(prompt: str, context_block: str = "") -> tuple:
 def call_claude(system: str, prompt: str) -> str:
     if not ANTHROPIC_API_KEY:
         raise HTTPException(status_code=503, detail="Anthropic API key not configured")
-    import anthropic
-    client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    message = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=4096,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return message.content[0].text
+    try:
+        import anthropic
+        client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        message = client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=8192,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text
+    except Exception as e:
+        logger.error(f"Claude API error: {e}")
+        raise RuntimeError(f"Claude error: {e}")
 
 
 def call_gpt(system: str, prompt: str) -> str:
     if not OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="OpenAI API key not configured")
-    from openai import OpenAI
-    client   = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        max_tokens=4096,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user",   "content": prompt},
-        ]
-    )
-    return response.choices[0].message.content
+    try:
+        from openai import OpenAI
+        client   = OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=8192,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user",   "content": prompt},
+            ]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"GPT API error: {e}")
+        raise RuntimeError(f"GPT error: {e}")
 
 
 def call_gemini(system: str, prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=503, detail="Gemini API key not configured")
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_API_KEY)
-    model    = genai.GenerativeModel("gemini-1.5-pro", system_instruction=system)
-    response = model.generate_content(prompt)
-    return response.text
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+        model    = genai.GenerativeModel("gemini-1.5-pro", system_instruction=system)
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        logger.error(f"Gemini API error: {e}")
+        raise RuntimeError(f"Gemini error: {e}")
 
 
 def dispatch(model_req: str, domain: str, system: str, prompt: str) -> tuple:
     """Route to the right model. Auto-routing is now domain-aware.
     Returns (response_text, model_label).
+    Falls back to GPT-4o if the primary model fails.
     """
     if model_req == "auto":
         resolved = domain_preferred_model(domain)
     else:
         resolved = model_req
 
-    if resolved == "gpt":
-        return call_gpt(system, prompt), "gpt-4o"
-    elif resolved == "gemini":
-        return call_gemini(system, prompt), "gemini-1.5-pro"
-    else:
-        return call_claude(system, prompt), "claude-opus-4-6"
+    try:
+        if resolved == "gpt":
+            return call_gpt(system, prompt), "gpt-4o"
+        elif resolved == "gemini":
+            return call_gemini(system, prompt), "gemini-1.5-pro"
+        else:
+            return call_claude(system, prompt), "claude-opus-4-6"
+    except RuntimeError as primary_err:
+        logger.warning(f"Primary model ({resolved}) failed: {primary_err}. Falling back to GPT-4o.")
+        if resolved != "gpt" and OPENAI_API_KEY:
+            try:
+                return call_gpt(system, prompt), "gpt-4o (fallback)"
+            except Exception as fallback_err:
+                logger.error(f"Fallback also failed: {fallback_err}")
+                raise HTTPException(status_code=502, detail=f"All models failed. Primary: {primary_err}. Fallback: {fallback_err}")
+        raise HTTPException(status_code=502, detail=str(primary_err))
 
 
 # ── Notion Review Queue ───────────────────────────────────────────────────────
@@ -536,8 +559,14 @@ async def run(request: RunRequest, api_key: Optional[str] = Security(api_key_hea
     system, domain = build_expert_system(request.prompt, context_block)
 
     # 3. Dispatch to model (domain-aware auto-routing)
-    model_req                 = request.model or "auto"
-    response_text, model_used = dispatch(model_req, domain, system, request.prompt)
+    model_req = request.model or "auto"
+    try:
+        response_text, model_used = dispatch(model_req, domain, system, request.prompt)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Dispatch failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Model call failed: {e}")
 
     # 4. Optionally save to Drive
     drive_link = None
