@@ -258,6 +258,22 @@
   .msg.ai.gpt    .msg-bubble { border-color: rgba(93,232,74,0.15); }
   .msg.ai.gemini .msg-bubble { border-color: rgba(155,110,255,0.2); }
 
+  /* Multi-agent status panel */
+  .agent-panel {
+    background: rgba(245,148,10,0.04); border: 1px solid rgba(245,148,10,0.2);
+    border-radius: 10px; padding: 10px 14px; margin: 6px 0 2px;
+    font-size: 11px; color: var(--muted);
+  }
+  .agent-panel-title { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--orange); margin-bottom: 8px; }
+  .agent-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+  .agent-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .agent-dot.running  { background: var(--orange); animation: pulse 1s infinite; }
+  .agent-dot.done     { background: var(--green); }
+  .agent-dot.error    { background: var(--danger); }
+  .agent-name { font-weight: 600; color: var(--white); min-width: 90px; }
+  .agent-model-tag { font-size: 9px; color: var(--muted); font-style: italic; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
   /* CAD block styling */
   .cad-block { border: 1px solid rgba(245,148,10,0.35); border-radius: 8px; margin: 10px 0; overflow: hidden; }
   .cad-block-header {
@@ -548,6 +564,19 @@
         </div>
         <label class="toggle">
           <input type="checkbox" id="driveToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row" style="margin-top:6px;">
+        <div>
+          <div class="toggle-label" style="display:flex;align-items:center;gap:6px;">
+            ⚡ Multi-Agent
+            <span style="font-size:9px;background:rgba(245,148,10,0.15);color:var(--orange);padding:1px 5px;border-radius:4px;font-weight:700;">BETA</span>
+          </div>
+          <div class="toggle-sub">Parallel specialist agents + synthesis</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="orchestrateToggle">
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -902,29 +931,77 @@ async function sendMessage() {
   const typingId = 'typing-' + Date.now();
   appendTyping(typingId);
 
+  const orchestrate = document.getElementById('orchestrateToggle').checked;
   const start = Date.now();
+  let agentPanelId = null;
+
   try {
     const body = {
       prompt,
       model: selectedModel,
       store_to_drive: document.getElementById('driveToggle').checked,
     };
-    const r = await fetch(`${SERVER}/run`, {
+
+    const endpoint = orchestrate ? '/orchestrate' : '/run';
+    const timeout  = orchestrate ? 120000 : 60000;   // orchestration needs more time
+
+    // Show live agent panel for orchestration mode
+    if (orchestrate) {
+      agentPanelId = 'ap-' + Date.now();
+      removeTyping(typingId);
+      const panel = document.createElement('div');
+      panel.id = agentPanelId;
+      panel.className = 'agent-panel';
+      panel.innerHTML =
+        `<div class="agent-panel-title">⚡ Dispatching agents…</div>` +
+        `<div class="agent-row"><div class="agent-dot running"></div><span class="agent-name">Decomposer</span><span class="agent-model-tag">analyzing task…</span></div>`;
+      document.getElementById('messages').appendChild(panel);
+      document.getElementById('messages').scrollTop = 99999;
+    }
+
+    const r = await fetch(`${SERVER}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(timeout),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
-    removeTyping(typingId);
-    const modelUsed = (d.model_used || selectedModel).toLowerCase()
+    // Update agent panel with results before removing
+    if (agentPanelId && d.agents && d.agents.length > 0) {
+      const panel = document.getElementById(agentPanelId);
+      if (panel) {
+        const agentRows = d.agents.map(a => {
+          const dotClass = a.error ? 'error' : 'done';
+          const status   = a.error ? `failed: ${a.error}` : (a.model || '');
+          return `<div class="agent-row">
+            <div class="agent-dot ${dotClass}"></div>
+            <span class="agent-name">${a.domain}</span>
+            <span class="agent-model-tag">${status}</span>
+          </div>`;
+        }).join('');
+        panel.innerHTML = `<div class="agent-panel-title">⚡ ${d.agents.length} agents · ${elapsed}s</div>${agentRows}`;
+        // Fade out after 4s
+        setTimeout(() => { if (panel) panel.style.transition='opacity 1s'; panel.style.opacity='0'; setTimeout(()=>panel.remove(),1000); }, 4000);
+      }
+    } else if (agentPanelId) {
+      document.getElementById(agentPanelId)?.remove();
+    }
+
+    if (!orchestrate) removeTyping(typingId);
+
+    const modelUsed = (d.model_used || d.model || selectedModel).toLowerCase()
       .replace('claude-opus-4-6','claude').replace('gpt-4o','gpt').replace('gemini-1.5-pro','gemini');
     const aiResponse = d.response || d.error || '';
-    appendMessage('ai', aiResponse, modelUsed, d, elapsed);
-    if (d.domain && d.domain !== 'default') showToast(`🎯 ${domainLabels[d.domain] || d.domain} expert activated`);
+    appendMessage('ai', aiResponse, d.orchestrated ? 'claude' : modelUsed, d, elapsed);
+
+    if (d.orchestrated) {
+      showToast(`⚡ ${d.agents?.length || 0} agents synthesized in ${elapsed}s`);
+    } else if (d.domain && d.domain !== 'default') {
+      showToast(`🎯 ${domainLabels[d.domain] || d.domain} expert activated`);
+    }
 
     // Save to persistent memory
     conversationMemory.push({ role: 'user',      content: rawPrompt || displayMsg });
@@ -937,7 +1014,8 @@ async function sendMessage() {
       showToast('✓ Saved to Google Drive');
     }
   } catch (err) {
-    removeTyping(typingId);
+    document.getElementById(agentPanelId)?.remove();
+    if (orchestrate) {/* typing already removed */ } else { removeTyping(typingId); }
     appendMessage('ai', `⚠️ Error: ${err.message}. The server may be waking up — try again in a moment.`, 'auto', null, null);
   } finally {
     isLoading = false;

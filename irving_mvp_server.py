@@ -606,6 +606,136 @@ async def debug_notion():
             result["error"] = str(e)
     return result
 
+# ?? Thread pool for parallel async agent calls ??????????????????????????????
+import asyncio, json as _json, re as _re
+from concurrent.futures import ThreadPoolExecutor
+_executor = ThreadPoolExecutor(max_workers=8)
+
+# ?? Orchestration models ??????????????????????????????????????????????????????
+class OrchestrateRequest(BaseModel):
+    prompt: str
+    model:  str = "auto"
+
+async def _call_agent_async(domain: str, sub_prompt: str, context_block: str) -> dict:
+    """Run one domain agent in a thread so agents execute in parallel."""
+    persona = EXPERT_PERSONAS.get(domain, EXPERT_PERSONAS["default"])
+    system  = persona + (f"\n\n{context_block}" if context_block else "")
+    loop    = asyncio.get_event_loop()
+    try:
+        result, model_used = await loop.run_in_executor(
+            _executor,
+            lambda: dispatch(sub_prompt, system, domain_preferred_model(domain))
+        )
+        return {"domain": domain, "response": result, "model": model_used, "error": None}
+    except Exception as e:
+        logger.error(f"Agent {domain} failed: {e}")
+        return {"domain": domain, "response": None, "model": None, "error": str(e)}
+
+def _decompose_prompt(prompt: str) -> dict:
+    """Ask Claude to split a multi-domain prompt into domain-specific sub-tasks."""
+    domain_list = ", ".join(k for k in EXPERT_PERSONAS.keys() if k != "default")
+    system = (
+        "You are a task router for a multi-agent AI system. "
+        "Given the user's prompt, decide if it spans multiple expert domains. "
+        f"Available domains: {domain_list}.\n\n"
+        "Reply with ONLY valid JSON - no explanation, no markdown:\n"
+        '{"multi_domain": true/false, '
+        '"tasks": [{"domain": "...", "sub_prompt": "...focused sub-task..."}], '
+        '"reasoning": "one sentence"}'
+        "\n\nRules:\n"
+        "- Only set multi_domain=true if the prompt GENUINELY needs 2+ distinct expert perspectives.\n"
+        "- Each sub_prompt must be self-contained and specific to its domain.\n"
+        "- If single domain, return tasks with one entry and multi_domain=false.\n"
+        "- Maximum 4 tasks."
+    )
+    try:
+        raw = call_claude(system, prompt)
+        m   = _re.search(r'\{[\s\S]*\}', raw)
+        return _json.loads(m.group()) if m else {"multi_domain": False, "tasks": []}
+    except Exception as e:
+        logger.error(f"Decompose failed: {e}")
+        return {"multi_domain": False, "tasks": []}
+
+@app.post("/orchestrate")
+async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security(api_key_header)):
+    """
+    Multi-agent orchestration:
+    1. Claude decomposes the prompt into domain sub-tasks.
+    2. All domain agents run IN PARALLEL via asyncio.gather().
+    3. Claude synthesizes the parallel outputs into one response.
+    Falls back to single-agent /run if the prompt is single-domain.
+    """
+    verify_api_key(api_key)
+    context_block = build_context_block(get_current_snapshots(), get_drive_context())
+
+    # ?? Step 1: Decompose ????????????????????????????????????????????????????
+    decomp = _decompose_prompt(req.prompt)
+    tasks  = decomp.get("tasks", [])
+
+    if not decomp.get("multi_domain") or len(tasks) < 2:
+        # Single domain - use normal dispatch
+        system, domain = build_expert_system(req.prompt, context_block)
+        try:
+            response, model_used = dispatch(req.prompt, system, req.model)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        return {
+            "response":      response,
+            "model":         model_used,
+            "domain":        domain,
+            "orchestrated":  False,
+            "agents":        [],
+            "reasoning":     decomp.get("reasoning", ""),
+        }
+
+    # ?? Step 2: Parallel agent dispatch ?????????????????????????????????????
+    logger.info(f"Orchestrating {len(tasks)} agents: {[t['domain'] for t in tasks]}")
+    agent_coros = [_call_agent_async(t["domain"], t["sub_prompt"], context_block) for t in tasks]
+    results     = await asyncio.gather(*agent_coros)
+
+    successful  = [r for r in results if r["response"]]
+    failed      = [r for r in results if r["error"]]
+    if failed:
+        logger.warning(f"Agents failed: {[(r['domain'], r['error']) for r in failed]}")
+
+    if not successful:
+        raise HTTPException(status_code=502, detail="All agents failed.")
+
+    # ?? Step 3: Synthesize ???????????????????????????????????????????????????
+    agent_outputs = "\n\n".join(
+        f"=== {r['domain'].upper()} AGENT ===\n{r['response']}" for r in successful
+    )
+    synthesis_prompt = (
+        f"Original user request:\n{req.prompt}\n\n"
+        f"Expert agent responses:\n{agent_outputs}\n\n"
+        "Synthesize these into one clear, well-structured response. "
+        "Integrate the domain perspectives naturally - do not just concatenate. "
+        "Lead with the most actionable insight."
+    )
+    synthesis_system = (
+        "You are a synthesis agent. You receive parallel expert responses and weave them "
+        "into one authoritative, cohesive answer. Preserve domain-specific precision while "
+        "creating a unified narrative. Be direct and action-oriented."
+    )
+    try:
+        final_response, _ = dispatch(synthesis_prompt, synthesis_system, "claude")
+    except Exception:
+        # Graceful fallback: structured concatenation
+        final_response = "\n\n".join(
+            f"**{r['domain'].upper()}**\n{r['response']}" for r in successful
+        )
+
+    return {
+        "response":    final_response,
+        "model":       "claude (synthesis)",
+        "domain":      "orchestrated",
+        "orchestrated": True,
+        "agents":      [{"domain": r["domain"], "model": r["model"], "error": r["error"]} for r in results],
+        "reasoning":   decomp.get("reasoning", ""),
+    }
+
 class CadRequest(BaseModel):
     prompt:    str
     format:    str  = "auto"   # "auto" | "scr" | "lsp" | "dxf"
