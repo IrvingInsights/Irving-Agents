@@ -393,12 +393,6 @@ _DOMAIN_SIGNALS = [
         "running plan", "supplement", "biometric", "hrv", "vo2 max",
         "health goal", "fitness",
     ]),
-    ("code", [
-        "python code", "javascript", "react component", "fastapi", "endpoint",
-        "function", "script", "bug fix", "error trace", "deploy", "render.com",
-        "github", "database query", "sql", "http request", "json schema",
-        "refactor", "unit test", "docker", "git commit", "api key",
-    ]),
     ("cad", [
         "autocad", "autolisp", "cad drawing", "cad file", "dxf", "dwg",
         "draw a ", "draw the ", "floor plan", "site plan", "elevation drawing",
@@ -407,6 +401,12 @@ _DOMAIN_SIGNALS = [
         "hatching", "dimension line", "annotation", "viewports",
         "layer management", "block insert", "xref", ".scr file", ".lsp file",
         "peakhinge drawing", "a-frame drawing", "cad model",
+    ]),
+    ("code", [
+        "python code", "javascript", "react component", "fastapi", "endpoint",
+        "function", "script", "bug fix", "error trace", "deploy", "render.com",
+        "github", "database query", "sql", "http request", "json schema",
+        "refactor", "unit test", "docker", "git commit", "api key",
     ]),
 ]
 
