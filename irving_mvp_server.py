@@ -143,17 +143,27 @@ def _date(prop) -> str:
 
 
 def get_current_snapshots(limit: int = 3) -> list:
-    if not notion or not CONTEXT_SNAPSHOTS_DB_ID:
+    """Query Notion Context Snapshots DB directly via REST (bypasses notion-client version issues)."""
+    if not NOTION_TOKEN or not CONTEXT_SNAPSHOTS_DB_ID:
         return []
     try:
-        response = notion.databases.query(
-            database_id=CONTEXT_SNAPSHOTS_DB_ID,
-            filter={"property": "Still Current?", "checkbox": {"equals": True}},
-            sorts=[{"property": "Snapshot Date", "direction": "descending"}],
-            page_size=limit,
-        )
+        import urllib.request as _ur
+        import json as _j
+        url  = f"https://api.notion.com/v1/databases/{CONTEXT_SNAPSHOTS_DB_ID}/query"
+        body = _j.dumps({
+            "filter": {"property": "Still Current?", "checkbox": {"equals": True}},
+            "sorts":  [{"property": "Snapshot Date", "direction": "descending"}],
+            "page_size": limit,
+        }).encode()
+        req = _ur.Request(url, data=body, method="POST", headers={
+            "Authorization":  f"Bearer {NOTION_TOKEN}",
+            "Content-Type":   "application/json",
+            "Notion-Version": "2022-06-28",
+        })
+        with _ur.urlopen(req, timeout=10) as resp:
+            data = _j.loads(resp.read())
         snapshots = []
-        for page in response.get("results", []):
+        for page in data.get("results", []):
             props = page["properties"]
             snapshots.append({
                 "name":                   _text(props.get("Snapshot Name")),
@@ -167,9 +177,8 @@ def get_current_snapshots(limit: int = 3) -> list:
             })
         return snapshots
     except Exception as e:
-        logger.error(f"Error fetching snapshots: {e}")
+        logger.error(f"Error fetching snapshots via REST: {e}")
         return []
-
 
 def build_context_block(snapshots: list, drive_context: str = "") -> str:
     lines = []
@@ -535,14 +544,21 @@ async def health():
 @app.get("/debug-notion")
 async def debug_notion():
     """Debug: test Notion snapshot query directly."""
-    result = {"db_id": CONTEXT_SNAPSHOTS_DB_ID, "notion_ready": bool(notion), "error": None, "raw_count": 0}
+    import notion_client as _nc
+    result = {"db_id": CONTEXT_SNAPSHOTS_DB_ID, "notion_ready": bool(notion), "error": None, "raw_count": 0,
+              "notion_version": getattr(_nc, "__version__", "unknown"),
+              "db_methods": [m for m in dir(notion.databases) if not m.startswith("_")] if notion else []}
     if notion and CONTEXT_SNAPSHOTS_DB_ID:
         try:
-            resp = notion.databases.query(
-                database_id=CONTEXT_SNAPSHOTS_DB_ID,
-                filter={"property": "Still Current?", "checkbox": {"equals": True}},
-                page_size=10,
-            )
+            # Try databases.query first, fall back to _get_paginated_data
+            if hasattr(notion.databases, "query"):
+                resp = notion.databases.query(
+                    database_id=CONTEXT_SNAPSHOTS_DB_ID,
+                    filter={"property": "Still Current?", "checkbox": {"equals": True}},
+                    page_size=10,
+                )
+            else:
+                resp = notion.databases.query_database(database_id=CONTEXT_SNAPSHOTS_DB_ID, page_size=10)
             result["raw_count"] = len(resp.get("results", []))
             result["first_names"] = [p["properties"].get("Snapshot Name", {}).get("title", [{}])[0].get("plain_text", "?") for p in resp.get("results", [])[:3]]
         except Exception as e:
