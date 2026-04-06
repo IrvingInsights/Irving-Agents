@@ -1,0 +1,20 @@
+﻿name: Keep Render Server Warm
+
+on:
+  schedule:
+    # Runs every 10 minutes — keeps Render free tier from cold-starting
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Irving MVP health endpoint
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://irving-mvp.onrender.com/health)
+          echo "Health check status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "Warning: server returned $STATUS"
+            exit 1
+          fi
