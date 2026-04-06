@@ -332,6 +332,7 @@
     border-top: 1px solid var(--border);
     padding: 16px 28px 20px;
     background: var(--bg);
+    flex-shrink: 0;
   }
 
   .input-wrap {
@@ -556,8 +557,15 @@
     </div>
 
     <!-- History -->
-    <div style="padding:10px 12px 6px; border-bottom:1px solid var(--border);">
-      <div class="sidebar-label" style="padding:0 4px">Session History</div>
+    <div style="padding:10px 12px 6px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+      <button onclick="toggleHistory()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:5px;padding:0;">
+        <span style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">History</span>
+        <span id="historyArrow" style="font-size:10px;color:var(--muted);">▾</span>
+      </button>
+      <div style="display:flex;gap:6px;">
+        <button onclick="clearMemory()" title="Clear conversation context" style="background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:9px;color:var(--muted);cursor:pointer;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color='var(--muted)'">ctx ✕</button>
+        <button onclick="clearHistory()" title="Clear history list" style="background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:9px;color:var(--muted);cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--muted)'">all ✕</button>
+      </div>
     </div>
     <div class="history-list" id="historyList">
       <div style="font-size:11px;color:var(--muted);padding:8px;text-align:center;">No history yet</div>
@@ -647,8 +655,49 @@
 const SERVER = 'https://irving-mvp.onrender.com';
 let selectedModel = 'auto';
 let isLoading = false;
-let historyItems = [];
 let attachedFiles = [];   // { name, type, content, dataUrl }
+
+// ── PERSISTENT CONVERSATION MEMORY ──────────────────────
+// Each entry: { role: 'user'|'assistant', content: string }
+const MEM_KEY     = 'irving_conv_memory';
+const HIST_KEY    = 'irving_history';
+const MAX_TURNS   = 10;   // keep last 10 exchanges in context
+const CTX_CHARS   = 8000; // max chars of history to inject
+
+let conversationMemory = loadMemory();
+let historyItems       = loadHistory();
+
+function loadMemory() {
+  try { return JSON.parse(localStorage.getItem(MEM_KEY) || '[]'); } catch { return []; }
+}
+function saveMemory() {
+  try { localStorage.setItem(MEM_KEY, JSON.stringify(conversationMemory.slice(-MAX_TURNS * 2))); } catch {}
+}
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch { return []; }
+}
+function saveHistory() {
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(historyItems.slice(0, 40))); } catch {}
+}
+
+function buildConversationContext() {
+  if (conversationMemory.length === 0) return '';
+  // Take recent turns, trim to CTX_CHARS
+  const recent = conversationMemory.slice(-MAX_TURNS * 2);
+  let ctx = recent.map(m =>
+    m.role === 'user'
+      ? `User: ${m.content}`
+      : `Irving: ${m.content.slice(0, 1200)}${m.content.length > 1200 ? '…' : ''}`
+  ).join('\n\n');
+  if (ctx.length > CTX_CHARS) ctx = '…[earlier context trimmed]\n\n' + ctx.slice(-CTX_CHARS);
+  return `--- Conversation so far ---\n${ctx}\n--- End of context ---\n\n`;
+}
+
+function clearMemory() {
+  conversationMemory = [];
+  saveMemory();
+  showToast('🧹 Conversation context cleared');
+}
 
 // ── FILE ATTACHMENT ──────────────────────────────────────
 function fileIcon(type) {
@@ -814,7 +863,8 @@ async function sendMessage() {
   // Snapshot files before clearing UI
   const filesSnapshot = [...attachedFiles];
   const fileCtx       = buildFileContext();
-  const fullPrompt    = fileCtx + (rawPrompt || 'Please review the attached file(s) above.');
+  const convCtx       = buildConversationContext();
+  const fullPrompt    = convCtx + fileCtx + (rawPrompt || 'Please review the attached file(s) above.');
 
   // What to display in chat (clean — no base64)
   const fileNames = filesSnapshot.map(f => `${fileIcon(f.type)} ${f.name}`).join('  ');
@@ -864,8 +914,15 @@ async function sendMessage() {
     removeTyping(typingId);
     const modelUsed = (d.model_used || selectedModel).toLowerCase()
       .replace('claude-opus-4-6','claude').replace('gpt-4o','gpt').replace('gemini-1.5-pro','gemini');
-    appendMessage('ai', d.response || d.error, modelUsed, d, elapsed);
+    const aiResponse = d.response || d.error || '';
+    appendMessage('ai', aiResponse, modelUsed, d, elapsed);
     if (d.domain && d.domain !== 'default') showToast(`🎯 ${domainLabels[d.domain] || d.domain} expert activated`);
+
+    // Save to persistent memory
+    conversationMemory.push({ role: 'user',      content: rawPrompt || displayMsg });
+    conversationMemory.push({ role: 'assistant', content: aiResponse });
+    saveMemory();
+
     addToHistory(displayMsg, modelUsed);
 
     if (body.store_to_drive && d.drive_doc_id) {
@@ -960,7 +1017,8 @@ function removeTyping(id) {
 
 // ── HISTORY ─────────────────────────────────────────────
 function addToHistory(prompt, model) {
-  historyItems.unshift({ prompt, model });
+  historyItems.unshift({ prompt, model, ts: Date.now() });
+  saveHistory();
   renderHistory();
 }
 function renderHistory() {
@@ -969,12 +1027,28 @@ function renderHistory() {
     list.innerHTML = '<div style="font-size:11px;color:var(--muted);padding:8px;text-align:center;">No history yet</div>';
     return;
   }
-  list.innerHTML = historyItems.slice(0, 20).map((item, i) => `
+  list.innerHTML = historyItems.slice(0, 40).map((item, i) => `
     <div class="history-item" onclick="sendQuick(${JSON.stringify(item.prompt)})">
       <div class="h-model ${item.model}">${(item.model||'auto').toUpperCase()}</div>
-      ${item.prompt.length > 60 ? item.prompt.slice(0, 60) + '…' : item.prompt}
+      ${item.prompt.length > 55 ? item.prompt.slice(0, 55) + '…' : item.prompt}
     </div>
   `).join('');
+}
+
+function toggleHistory() {
+  const list   = document.getElementById('historyList');
+  const arrow  = document.getElementById('historyArrow');
+  const hidden = list.style.display === 'none';
+  list.style.display  = hidden ? '' : 'none';
+  arrow.textContent   = hidden ? '▾' : '▸';
+  try { localStorage.setItem('irving_hist_open', hidden ? '1' : '0'); } catch {}
+}
+
+function clearHistory() {
+  historyItems = [];
+  saveHistory();
+  renderHistory();
+  showToast('🧹 History cleared');
 }
 
 // ── MARKDOWN RENDERER ────────────────────────────────────
@@ -1027,9 +1101,25 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// focus textarea on load
+// ── INIT ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('promptInput').focus();
+
+  // Restore history list from localStorage
+  renderHistory();
+
+  // Restore history collapse state
+  const histOpen = localStorage.getItem('irving_hist_open');
+  if (histOpen === '0') {
+    document.getElementById('historyList').style.display = 'none';
+    document.getElementById('historyArrow').textContent  = '▸';
+  }
+
+  // Show memory indicator if context exists
+  if (conversationMemory.length > 0) {
+    const turns = Math.floor(conversationMemory.length / 2);
+    showToast(`💬 ${turns} prior turn${turns !== 1 ? 's' : ''} in context`);
+  }
 });
 </script>
 </body>
