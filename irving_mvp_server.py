@@ -322,6 +322,37 @@ EXPERT_PERSONAS = {
         "- Always end with a clear next action or decision\n"
         "- Treat Daniel's time as the scarcest resource in the system"
     ),
+    "cad": (
+        "You are an expert AutoCAD drafter, AutoLISP programmer, and computational design specialist. "
+        "You help Daniel Irving translate natural language design intent into precise AutoCAD commands, "
+        "scripts, and parametric routines - primarily for the PeakHinge A-frame dwelling project and "
+        "related structural/architectural work, but also for any technical drawing need.\n\n"
+        "Your core capabilities:\n"
+        "1. AutoCAD Script Files (.scr) - plain-text command sequences loadable directly via AutoCAD's "
+        "SCRIPT command or drag-and-drop\n"
+        "2. AutoLISP Routines (.lsp) - parametric scripts for formula-driven or repetitive geometry; "
+        "loaded via (load \"filename.lsp\") or the APPLOAD dialog\n"
+        "3. DXF content - structured geometry for import into AutoCAD, FreeCAD, or any CAD platform\n"
+        "4. Natural language to command translation - convert plain English descriptions into exact "
+        "AutoCAD command sequences\n\n"
+        "Output format rules (ALWAYS follow these):\n"
+        "- Wrap AutoCAD script content in ```autocad code blocks\n"
+        "- Wrap AutoLISP code in ```autolisp code blocks\n"
+        "- Wrap DXF content in ```dxf code blocks\n"
+        "- Always explain what the script draws and exactly how to run it in AutoCAD\n"
+        "- Lead with a brief summary of what the output will produce\n\n"
+        "Technical standards:\n"
+        "- Default to architectural units (feet/inches) unless metric is specified\n"
+        "- Include UNITS, LIMITS, and ZOOM E commands at the top of every .scr file\n"
+        "- Use proper AIA layer naming: A-WALL, A-DOOR, A-GLAZ, S-BEAM, S-COLS, C-TOPO, etc.\n"
+        "- For A-frame / PeakHinge geometry: define key parametric variables first (span, pitch, "
+        "height, bay spacing), then derive all other dimensions from those variables\n"
+        "- For structural drawings: include dimension strings, leader notes, and title block placeholder\n"
+        "- DXF output uses R2013 format for maximum compatibility\n"
+        "- In AutoLISP: define variables at the top, add inline comments, end with a usage docstring\n"
+        "- Always state assumptions about units, origin point, and coordinate system\n"
+        "- Flag any geometry that requires field verification or engineering stamp"
+    ),
 }
 
 # Domain keyword detection — ordered by specificity
@@ -368,6 +399,15 @@ _DOMAIN_SIGNALS = [
         "github", "database query", "sql", "http request", "json schema",
         "refactor", "unit test", "docker", "git commit", "api key",
     ]),
+    ("cad", [
+        "autocad", "autolisp", "cad drawing", "cad file", "dxf", "dwg",
+        "draw a ", "draw the ", "floor plan", "site plan", "elevation drawing",
+        "section drawing", "detail drawing", "cad script", "lisp routine",
+        "drafting", "2d drawing", "technical drawing", "orthographic",
+        "hatching", "dimension line", "annotation", "viewports",
+        "layer management", "block insert", "xref", ".scr file", ".lsp file",
+        "peakhinge drawing", "a-frame drawing", "cad model",
+    ]),
 ]
 
 
@@ -384,6 +424,7 @@ def domain_preferred_model(domain: str) -> str:
     """When model='auto', return the best model for each domain."""
     return {
         "code":         "gpt",     # GPT-4o excels at code generation
+        "cad":          "claude",  # Claude generates best-quality CAD scripts and AutoLISP
         "health":       "gemini",  # Gemini good at research / evidence synthesis
         "structural":   "claude",  # Claude for deep analytical reasoning
         "strategy":     "claude",
@@ -564,6 +605,61 @@ async def debug_notion():
         except Exception as e:
             result["error"] = str(e)
     return result
+
+class CadRequest(BaseModel):
+    prompt:    str
+    format:    str  = "auto"   # "auto" | "scr" | "lsp" | "dxf"
+    model:     str  = "auto"
+
+@app.post("/cad")
+async def cad_endpoint(req: CadRequest, api_key: Optional[str] = Security(api_key_header)):
+    """Natural language ? AutoCAD script/routine with downloadable output."""
+    verify_api_key(api_key)
+    fmt_hint = {
+        "scr": "Generate an AutoCAD script (.scr) file. Use ```autocad code blocks.",
+        "lsp": "Generate an AutoLISP routine (.lsp). Use ```autolisp code blocks.",
+        "dxf": "Generate a DXF file fragment. Use ```dxf code blocks.",
+        "auto": (
+            "Choose the best output format: .scr for simple draw commands, "
+            ".lsp for parametric/formulaic geometry, .dxf for entity import. "
+            "Use the appropriate code block tag (autocad / autolisp / dxf)."
+        ),
+    }.get(req.format, "")
+
+    context_block = build_context_block(get_current_snapshots(), get_drive_context())
+    system = EXPERT_PERSONAS["cad"]
+    if context_block:
+        system += f"\n\n{context_block}"
+
+    augmented_prompt = (
+        f"{req.prompt}\n\n"
+        f"[Format instruction: {fmt_hint}]\n"
+        "After the code block, include:\n"
+        "1. How to load/run this in AutoCAD (exact steps)\n"
+        "2. Key dimensions and assumptions made\n"
+        "3. Suggested layer names and colors"
+    )
+
+    try:
+        response_text, model_used = dispatch(augmented_prompt, system, "claude")
+        # Detect which script format was used
+        script_format = "scr"
+        if "```autolisp" in response_text.lower():
+            script_format = "lsp"
+        elif "```dxf" in response_text.lower():
+            script_format = "dxf"
+
+        return {
+            "response":      response_text,
+            "model":         model_used,
+            "domain":        "cad",
+            "script_format": script_format,
+            "filename":      f"irving_cad_{script_format}.{script_format}",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 @app.get("/context")
 async def get_context(api_key: Optional[str] = Security(api_key_header)):
