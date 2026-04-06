@@ -620,11 +620,11 @@ async def _call_agent_async(domain: str, sub_prompt: str, context_block: str) ->
     """Run one domain agent in a thread so agents execute in parallel."""
     persona = EXPERT_PERSONAS.get(domain, EXPERT_PERSONAS["default"])
     system  = persona + (f"\n\n{context_block}" if context_block else "")
-    loop    = asyncio.get_event_loop()
+    loop    = asyncio.get_running_loop()
     try:
         result, model_used = await loop.run_in_executor(
             _executor,
-            lambda: dispatch(sub_prompt, system, domain_preferred_model(domain))
+            lambda: dispatch(domain_preferred_model(domain), domain, system, sub_prompt)
         )
         return {"domain": domain, "response": result, "model": model_used, "error": None}
     except Exception as e:
