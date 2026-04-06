@@ -532,6 +532,23 @@ async def health():
     }
 
 
+@app.get("/debug-notion")
+async def debug_notion():
+    """Debug: test Notion snapshot query directly."""
+    result = {"db_id": CONTEXT_SNAPSHOTS_DB_ID, "notion_ready": bool(notion), "error": None, "raw_count": 0}
+    if notion and CONTEXT_SNAPSHOTS_DB_ID:
+        try:
+            resp = notion.databases.query(
+                database_id=CONTEXT_SNAPSHOTS_DB_ID,
+                filter={"property": "Still Current?", "checkbox": {"equals": True}},
+                page_size=10,
+            )
+            result["raw_count"] = len(resp.get("results", []))
+            result["first_names"] = [p["properties"].get("Snapshot Name", {}).get("title", [{}])[0].get("plain_text", "?") for p in resp.get("results", [])[:3]]
+        except Exception as e:
+            result["error"] = str(e)
+    return result
+
 @app.get("/context")
 async def get_context(api_key: Optional[str] = Security(api_key_header)):
     verify_api_key(api_key)
