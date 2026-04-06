@@ -862,6 +862,8 @@ async function checkHealth(isRetry = false) {
   }
 }
 checkHealth();
+// Keep server warm: silent ping every 8 min so Render never cold-starts during a session
+setInterval(() => fetch(SERVER + '/health').catch(() => {}), 8 * 60 * 1000);
 
 // ── INPUT HANDLING ───────────────────────────────────────
 function handleInput(el) {
