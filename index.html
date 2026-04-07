@@ -716,7 +716,7 @@ function loadConversations() {
   try { return JSON.parse(localStorage.getItem(CONV_KEY) || '[]'); } catch { return []; }
 }
 function saveConversations() {
-  try { localStorage.setItem(CONV_KEY, JSON.stringify(conversations.slice(0, 30))); } catch {}
+  try { localStorage.setItem(CONV_KEY, JSON.stringify(conversations.slice(0, 30))); 
 } catch {}
 }
 
