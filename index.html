@@ -174,7 +174,8 @@
     transition: all 0.15s;
     margin-bottom: 4px;
   }
-  .history-item:hover { background: var(--bg-card); border-color: var(--border); color: var(--white); }
+  .history-item:hover  { background: var(--bg-card); border-color: var(--border); color: var(--white); }
+.history-item.active { background: rgba(0,212,255,.08); border-color: var(--cyan) !important; color: var(--white); }
   .history-item .h-model { font-size: 9px; margin-bottom: 2px; font-weight: 700; letter-spacing: 1px; }
   .history-item .h-model.claude { color: var(--orange); }
   .history-item .h-model.gpt    { color: var(--green); }
@@ -600,8 +601,8 @@
         <span id="historyArrow" style="font-size:10px;color:var(--muted);">▾</span>
       </button>
       <div style="display:flex;gap:6px;">
-        <button onclick="clearMemory()" title="Clear conversation context" style="background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:9px;color:var(--muted);cursor:pointer;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color='var(--muted)'">ctx ✕</button>
-        <button onclick="clearHistory()" title="Clear history list" style="background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:9px;color:var(--muted);cursor:pointer;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--muted)'">all ✕</button>
+        <button onclick="newChat()" style="background:rgba(0,212,255,.12);border:1px solid var(--cyan);border-radius:5px;padding:2px 8px;font-size:9px;color:var(--cyan);cursor:pointer;font-weight:700;">+ New</button>
+        <button onclick="clearHistory()" title="Delete all conversations" style="background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:9px;color:var(--muted);cursor:pointer;">all x</button>
       </div>
     </div>
     <div class="history-list" id="historyList">
@@ -696,13 +697,14 @@ let attachedFiles = [];   // { name, type, content, dataUrl }
 
 // ── PERSISTENT CONVERSATION MEMORY ──────────────────────
 // Each entry: { role: 'user'|'assistant', content: string }
-const MEM_KEY     = 'irving_conv_memory';
-const HIST_KEY    = 'irving_history';
-const MAX_TURNS   = 10;   // keep last 10 exchanges in context
-const CTX_CHARS   = 8000; // max chars of history to inject
+const MEM_KEY   = 'irving_conv_memory';
+const CONV_KEY  = 'irving_conversations';
+const MAX_TURNS = 10;
+const CTX_CHARS = 8000;
 
 let conversationMemory = loadMemory();
-let historyItems       = loadHistory();
+let conversations      = loadConversations();
+let currentConvId      = 'conv_' + Date.now();
 
 function loadMemory() {
   try { return JSON.parse(localStorage.getItem(MEM_KEY) || '[]'); } catch { return []; }
@@ -710,11 +712,12 @@ function loadMemory() {
 function saveMemory() {
   try { localStorage.setItem(MEM_KEY, JSON.stringify(conversationMemory.slice(-MAX_TURNS * 2))); } catch {}
 }
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch { return []; }
+function loadConversations() {
+  try { return JSON.parse(localStorage.getItem(CONV_KEY) || '[]'); } catch { return []; }
 }
-function saveHistory() {
-  try { localStorage.setItem(HIST_KEY, JSON.stringify(historyItems.slice(0, 40))); } catch {}
+function saveConversations() {
+  try { localStorage.setItem(CONV_KEY, JSON.stringify(conversations.slice(0, 30))); } catch {}
+} catch {}
 }
 
 function buildConversationContext() {
@@ -1010,7 +1013,7 @@ async function sendMessage() {
     conversationMemory.push({ role: 'assistant', content: aiResponse });
     saveMemory();
 
-    addToHistory(displayMsg, modelUsed);
+    updateCurrentConversation(displayMsg, modelUsed);
 
     if (body.store_to_drive && d.drive_doc_id) {
       showToast('✓ Saved to Google Drive');
@@ -1043,7 +1046,7 @@ async function sendMessage() {
         conversationMemory.push({ role: 'user', content: rawPrompt || displayMsg });
         conversationMemory.push({ role: 'assistant', content: d2.response || '' });
         saveMemory();
-        addToHistory(displayMsg, mu2);
+        updateCurrentConversation(displayMsg, mu2);
         return;
       } catch (err2) {
         removeTyping(retryId);
@@ -1142,42 +1145,101 @@ function removeTyping(id) {
 }
 
 // ── HISTORY ─────────────────────────────────────────────
-function addToHistory(prompt, model) {
-  historyItems.unshift({ prompt, model, ts: Date.now() });
-  saveHistory();
+function updateCurrentConversation(displayMsg, model) {
+  const snapshot = conversationMemory.slice();
+  const idx = conversations.findIndex(cv => cv.id === currentConvId);
+  if (idx >= 0) {
+    conversations[idx].messages = snapshot;
+    conversations[idx].model    = model;
+    conversations[idx].ts       = Date.now();
+  } else {
+    const title = displayMsg.length > 60 ? displayMsg.slice(0, 60) + '...' : displayMsg;
+    conversations.unshift({ id: currentConvId, title, model, ts: Date.now(), messages: snapshot });
+  }
+  saveConversations();
   renderHistory();
 }
+
+function loadConversation(convId) {
+  const conv = conversations.find(cv => cv.id === convId);
+  if (!conv) return;
+  conversationMemory = conv.messages.slice();
+  saveMemory();
+  currentConvId = convId;
+  const msgEl = document.getElementById('messages');
+  msgEl.innerHTML = '';
+  const welcome = document.getElementById('welcomeState');
+  if (welcome) welcome.remove();
+  for (let i = 0; i < conv.messages.length; i += 2) {
+    const u = conv.messages[i];
+    const a = conv.messages[i + 1];
+    if (u) appendMessage('user', u.content, null, null, null);
+    if (a) {
+      const m = (conv.model || 'auto').toLowerCase()
+        .replace('claude-opus-4-6','claude').replace('gpt-4o','gpt').replace('gemini-1.5-pro','gemini');
+      appendMessage('ai', a.content, m, null, null);
+    }
+  }
+  renderHistory();
+  showToast('Conversation loaded');
+}
+
+function newChat() {
+  currentConvId      = 'conv_' + Date.now();
+  conversationMemory = [];
+  saveMemory();
+  const msgEl = document.getElementById('messages');
+  msgEl.innerHTML = '<div id="welcomeState" class="welcome-state"><div class="welcome-title">Irving Insights</div><div class="welcome-sub">Ready, Daniel. New conversation.</div></div>';
+  renderHistory();
+  document.getElementById('promptInput').focus();
+}
+
 function renderHistory() {
   const list = document.getElementById('historyList');
-  if (historyItems.length === 0) {
-    list.innerHTML = '<div style="font-size:11px;color:var(--muted);padding:8px;text-align:center;">No history yet</div>';
+  if (conversations.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--muted);padding:8px;text-align:center;">No conversations yet</div>';
     return;
   }
-  list.innerHTML = historyItems.slice(0, 40).map((item, i) => `
-    <div class="history-item" onclick="sendQuick(${JSON.stringify(item.prompt)})">
-      <div class="h-model ${item.model}">${(item.model||'auto').toUpperCase()}</div>
-      ${item.prompt.length > 55 ? item.prompt.slice(0, 55) + '…' : item.prompt}
-    </div>
-  `).join('');
+  list.innerHTML = conversations.slice(0, 30).map(conv => {
+    const isActive = conv.id === currentConvId;
+    const age = _relTime(conv.ts);
+    const m   = (conv.model || 'auto').toLowerCase()
+      .replace('claude-opus-4-6','claude').replace('gpt-4o','gpt').replace('gemini-1.5-pro','gemini');
+    const safeId    = conv.id.replace(/'/g, '');
+    const safeTitle = conv.title.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return '<div class="history-item' + (isActive ? ' active' : '') + '" onclick="loadConversation(\'' + safeId + '\')">'
+      + '<div class="h-model ' + m + '">' + m.toUpperCase() + '</div>'
+      + '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + safeTitle + '</div>'
+      + '<div style="font-size:9px;color:var(--muted);margin-top:2px;">' + age + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function _relTime(ts) {
+  const d = Date.now() - ts;
+  if (d < 60000)    return 'just now';
+  if (d < 3600000)  return Math.floor(d / 60000)   + 'm ago';
+  if (d < 86400000) return Math.floor(d / 3600000)  + 'h ago';
+  return Math.floor(d / 86400000) + 'd ago';
 }
 
 function toggleHistory() {
-  const list   = document.getElementById('historyList');
-  const arrow  = document.getElementById('historyArrow');
+  const list  = document.getElementById('historyList');
+  const arrow = document.getElementById('historyArrow');
   const hidden = list.style.display === 'none';
-  list.style.display  = hidden ? '' : 'none';
-  arrow.textContent   = hidden ? '▾' : '▸';
+  list.style.display = hidden ? '' : 'none';
+  arrow.textContent  = hidden ? '?' : '?';
   try { localStorage.setItem('irving_hist_open', hidden ? '1' : '0'); } catch {}
 }
 
 function clearHistory() {
-  historyItems = [];
-  saveHistory();
+  if (!confirm('Delete all saved conversations?')) return;
+  conversations  = [];
+  currentConvId  = 'conv_' + Date.now();
+  saveConversations();
   renderHistory();
-  showToast('🧹 History cleared');
+  showToast('All conversations cleared');
 }
-
-// ── CAD SCRIPT DOWNLOADER ────────────────────────────────
 function downloadCAD(btnEl) {
   const pre  = btnEl.closest('.cad-block');
   const code = pre.querySelector('code').textContent;
