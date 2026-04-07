@@ -150,7 +150,7 @@
   .toggle input:checked + .toggle-slider:before { background: var(--cyan); transform: translateX(16px); box-shadow: 0 0 8px var(--cyan); }
 
   /* Quick prompts */
-  .quick-prompts { display: flex; flex-direction: column; gap: 5px; }
+  .quick-prompts { display: flex; flex-direction: column; gap: 5px; max-height: 160px; overflow-y: auto; }
   .quick-btn {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 7px; padding: 8px 10px;
@@ -166,7 +166,7 @@
     color: var(--muted); padding: 8px 2px 4px; opacity: 0.6; }
 
   /* History */
-  .history-list { overflow-y: auto; flex: 1; padding: 8px; }
+  .history-list { overflow-y: auto; flex: 1; min-height: 120px; padding: 8px; }
   .history-item {
     padding: 8px 10px; border-radius: 7px; cursor: pointer;
     font-size: 11px; color: var(--muted); line-height: 1.3;
