@@ -864,6 +864,19 @@ async function checkHealth(isRetry = false) {
     }
   }
 }
+// Poll /health until server responds OK or maxMs exceeded. Returns true if ready.
+async function waitForServerReady(maxMs = 55000) {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(SERVER + '/health', { signal: AbortSignal.timeout(6000) });
+      if (r.ok) return true;
+    } catch {}
+    await new Promise(res => setTimeout(res, 3000));
+  }
+  return false;
+}
+
 checkHealth();
 // Keep server warm: silent ping every 8 min so Render never cold-starts during a session
 setInterval(() => fetch(SERVER + '/health').catch(() => {}), 8 * 60 * 1000);
@@ -1022,41 +1035,58 @@ async function sendMessage() {
     document.getElementById(agentPanelId)?.remove();
     if (!orchestrate) removeTyping(typingId);
 
-    const isNetErr = err.message === 'Failed to fetch' || err.name === 'TypeError';
+    const isNetErr = err.message === 'Failed to fetch' || err.name === 'TypeError'
+                  || err.name === 'TimeoutError' || err.name === 'AbortError';
     if (isNetErr) {
-      // Auto-retry once - server may have been mid-cold-start
-      showToast('Server waking up - retrying in 4s.');
-      await new Promise(res => setTimeout(res, 4000));
-      const retryId = 'retry-' + Date.now();
-      appendTyping(retryId);
-      try {
-        const r2 = await fetch(`${SERVER}${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(timeout),
-        });
-        if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
-        const d2 = await r2.json();
-        removeTyping(retryId);
-        const el2 = ((Date.now() - start) / 1000).toFixed(1);
-        const mu2 = (d2.model_used || d2.model || selectedModel).toLowerCase()
-          .replace('claude-opus-4-6','claude').replace('gpt-4o','gpt').replace('gemini-1.5-pro','gemini');
-        appendMessage('ai', d2.response || d2.error || '', mu2, d2, el2);
-        conversationMemory.push({ role: 'user', content: rawPrompt || displayMsg });
-        conversationMemory.push({ role: 'assistant', content: d2.response || '' });
-        saveMemory();
-        updateCurrentConversation(displayMsg, mu2);
-        return;
-      } catch (err2) {
-        removeTyping(retryId);
-        appendMessage('ai', 'Server unreachable after retry. Wait a moment and try again.', 'auto', null, null);
+      // Server may be cold-starting — wait until /health confirms ready, then retry
+      const dot  = document.getElementById('statusDot');
+      const stxt = document.getElementById('statusText');
+      dot.className  = 'status-dot';
+      stxt.textContent = 'Waking up…';
+      showToast('Server waking up — retrying when ready…');
+
+      const serverReady = await waitForServerReady(55000);
+
+      if (!serverReady) {
+        dot.className    = 'status-dot err';
+        stxt.textContent = 'Offline — click to retry';
+        appendMessage('ai',
+          'Server is still starting up. Wait 30 seconds then send your message again.',
+          'auto', null, null);
+      } else {
+        // Server confirmed ready — fire the real retry
+        checkHealth(); // refresh status pill
+        const retryId = 'retry-' + Date.now();
+        appendTyping(retryId);
+        try {
+          const r2 = await fetch(`${SERVER}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(timeout),
+          });
+          if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
+          const d2 = await r2.json();
+          removeTyping(retryId);
+          const el2 = ((Date.now() - start) / 1000).toFixed(1);
+          const mu2 = (d2.model_used || d2.model || selectedModel).toLowerCase()
+            .replace('claude-opus-4-6','claude').replace('gpt-4o','gpt').replace('gemini-1.5-pro','gemini');
+          appendMessage('ai', d2.response || d2.error || '', mu2, d2, el2);
+          conversationMemory.push({ role: 'user', content: rawPrompt || displayMsg });
+          conversationMemory.push({ role: 'assistant', content: d2.response || '' });
+          saveMemory();
+          updateCurrentConversation(displayMsg, mu2);
+          return;
+        } catch (err2) {
+          removeTyping(retryId);
+          appendMessage('ai',
+            `Request failed after server woke up (${err2.message}). Please try again.`,
+            'auto', null, null);
+        }
       }
     } else {
-      const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError';
-      appendMessage('ai', isTimeout
-        ? 'Request timed out - the AI is thinking hard. Try a shorter prompt or try again.'
-        : `Connection error: ${err.message}. Tap the retry button or wait a moment.`,
+      appendMessage('ai',
+        `Connection error: ${err.message}. Check your connection and try again.`,
         'auto', null, null);
     }
 
