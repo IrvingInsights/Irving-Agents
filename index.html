@@ -414,6 +414,36 @@
   .char-count { font-size: 11px; color: var(--muted); }
   .char-count.warn { color: var(--orange); }
 
+  .ops-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding: 0 2px;
+  }
+  .ops-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--white);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .ops-btn:hover {
+    border-color: var(--cyan-dim);
+    color: var(--cyan);
+  }
+  .ops-btn.subtle {
+    color: var(--muted);
+  }
+  .ops-btn.subtle:hover {
+    color: var(--white);
+    border-color: var(--border);
+  }
+
   /* ── ATTACH BUTTON ── */
   .attach-btn {
     width: 32px; height: 32px; border-radius: 8px; border: none;
@@ -581,6 +611,26 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
+      <div class="toggle-row" style="margin-top:6px;">
+        <div>
+          <div class="toggle-label">Auto Sweep</div>
+          <div class="toggle-sub">Push actionable items to Review Queue</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="autoSweepToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row" style="margin-top:6px;">
+        <div>
+          <div class="toggle-label">Auto Snapshot</div>
+          <div class="toggle-sub">Save the latest exchange to Context Snapshots</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="autoSnapshotToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
     </div>
 
     <!-- Quick Prompts — generated from live Notion context -->
@@ -680,6 +730,11 @@
         <span class="input-hint" id="modelHint">⚡ Auto-routing active — best model chosen per prompt</span>
         <span class="char-count" id="charCount"></span>
       </div>
+      <div class="ops-bar">
+        <button class="ops-btn" onclick="manualSweep()">Sweep Last Reply</button>
+        <button class="ops-btn" onclick="manualSnapshot()">Snapshot Chat</button>
+        <button class="ops-btn subtle" onclick="clearMemory()">Clear Context</button>
+      </div>
     </div>
 
   </div>
@@ -694,11 +749,15 @@ const SERVER = 'https://irving-mvp.onrender.com';
 let selectedModel = 'auto';
 let isLoading = false;
 let attachedFiles = [];   // { name, type, content, dataUrl }
+let latestExchange = null;
 
 // ── PERSISTENT CONVERSATION MEMORY ──────────────────────
 // Each entry: { role: 'user'|'assistant', content: string }
 const MEM_KEY   = 'irving_conv_memory';
 const CONV_KEY  = 'irving_conversations';
+const AUTO_SWEEP_KEY = 'irving_auto_sweep';
+const AUTO_SNAPSHOT_KEY = 'irving_auto_snapshot';
+const API_KEY_STORAGE = 'irving_api_key';
 const MAX_TURNS = 10;
 const CTX_CHARS = 8000;
 
@@ -731,6 +790,121 @@ function buildConversationContext() {
   ).join('\n\n');
   if (ctx.length > CTX_CHARS) ctx = '…[earlier context trimmed]\n\n' + ctx.slice(-CTX_CHARS);
   return `--- Conversation so far ---\n${ctx}\n--- End of context ---\n\n`;
+}
+
+function buildConversationTranscript() {
+  if (conversationMemory.length === 0) return '';
+  return conversationMemory.slice(-MAX_TURNS * 2).map(m =>
+    m.role === 'user' ? `User: ${m.content}` : `Irving: ${m.content}`
+  ).join('\n\n');
+}
+
+function apiHeaders(includeJson = true) {
+  const headers = includeJson ? { 'Content-Type': 'application/json' } : {};
+  const apiKey = (localStorage.getItem(API_KEY_STORAGE) || '').trim();
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  return headers;
+}
+
+function promptForApiKey(message = 'Enter the Irving API key for this server') {
+  const existing = (localStorage.getItem(API_KEY_STORAGE) || '').trim();
+  const value = window.prompt(message, existing);
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed) {
+    localStorage.setItem(API_KEY_STORAGE, trimmed);
+  } else {
+    localStorage.removeItem(API_KEY_STORAGE);
+  }
+  return trimmed || null;
+}
+
+async function postJson(path, body, timeout = 45000) {
+  const res = await fetch(`${SERVER}${path}`, {
+    method: 'POST',
+    headers: apiHeaders(true),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeout),
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) {
+    const err = new Error(data.detail || data.error || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+function buildOperationalPayload(prompt, response) {
+  return {
+    prompt,
+    response,
+    conversation: buildConversationTranscript(),
+  };
+}
+
+function getLatestExchange() {
+  if (latestExchange?.prompt && latestExchange?.response) return latestExchange;
+  if (conversationMemory.length < 2) return null;
+  const lastAssistant = conversationMemory[conversationMemory.length - 1];
+  const lastUser = conversationMemory[conversationMemory.length - 2];
+  if (lastUser?.role !== 'user' || lastAssistant?.role !== 'assistant') return null;
+  return buildOperationalPayload(lastUser.content, lastAssistant.content);
+}
+
+async function runSweep(payload, mode = 'manual') {
+  const data = await postJson('/ops/sweep', payload, 45000);
+  if (data.queued_count > 0) {
+    showToast(`${mode === 'auto' ? 'Auto Sweep' : 'Sweep'} queued ${data.queued_count} item${data.queued_count === 1 ? '' : 's'}`);
+  } else {
+    showToast(`${mode === 'auto' ? 'Auto Sweep' : 'Sweep'} found nothing actionable`);
+  }
+  return data;
+}
+
+async function runSnapshot(payload, mode = 'manual') {
+  const data = await postJson('/ops/snapshot', payload, 45000);
+  const name = data?.snapshot?.snapshot_name || 'Snapshot';
+  showToast(`${mode === 'auto' ? 'Auto Snapshot' : 'Snapshot saved'}: ${name}`);
+  return data;
+}
+
+async function maybeRunAutoOps(payload) {
+  const tasks = [];
+  if (document.getElementById('autoSweepToggle')?.checked) {
+    tasks.push(runSweep(payload, 'auto').catch(err => showToast(`Auto Sweep failed: ${err.message}`)));
+  }
+  if (document.getElementById('autoSnapshotToggle')?.checked) {
+    tasks.push(runSnapshot(payload, 'auto').catch(err => showToast(`Auto Snapshot failed: ${err.message}`)));
+  }
+  if (tasks.length) await Promise.allSettled(tasks);
+}
+
+async function manualSweep() {
+  const payload = getLatestExchange();
+  if (!payload) return showToast('No reply available to sweep yet');
+  try {
+    await runSweep(payload, 'manual');
+  } catch (err) {
+    if (err.status === 401 && promptForApiKey('Sweep needs the Irving API key. Enter it and try again.')) {
+      return manualSweep();
+    }
+    showToast(`Sweep failed: ${err.message}`);
+  }
+}
+
+async function manualSnapshot() {
+  const payload = getLatestExchange();
+  if (!payload) return showToast('No reply available to snapshot yet');
+  try {
+    await runSnapshot(payload, 'manual');
+  } catch (err) {
+    if (err.status === 401 && promptForApiKey('Snapshot needs the Irving API key. Enter it and try again.')) {
+      return manualSnapshot();
+    }
+    showToast(`Snapshot failed: ${err.message}`);
+  }
 }
 
 function clearMemory() {
@@ -854,6 +1028,11 @@ async function checkHealth(isRetry = false) {
       .filter(([,v]) => v === 'ready').map(([k]) => k.toUpperCase()).join(' · ');
     text.textContent = allReady ? `Live · ${models}` : 'Degraded';
   } catch (e) {
+    if (e.status === 401) {
+      status.textContent = 'auth';
+      status.title = 'Server requires Irving API key for context';
+      return;
+    }
     if (!isRetry && e.name === 'TimeoutError') {
       // First timeout — server may be cold-starting, retry once
       text.textContent = 'Waking up…';
@@ -979,11 +1158,20 @@ async function sendMessage() {
 
     const r = await fetch(`${SERVER}${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders(true),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeout),
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) {
+      let detail = `HTTP ${r.status}`;
+      try {
+        const errData = await r.json();
+        detail = errData.detail || errData.error || detail;
+      } catch {}
+      const err = new Error(detail);
+      err.status = r.status;
+      throw err;
+    }
     const d = await r.json();
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
@@ -1027,13 +1215,28 @@ async function sendMessage() {
     saveMemory();
 
     updateCurrentConversation(displayMsg, modelUsed);
+    latestExchange = buildOperationalPayload(rawPrompt || displayMsg, aiResponse);
+    void maybeRunAutoOps(latestExchange);
 
-    if (body.store_to_drive && d.drive_doc_id) {
+    if (body.store_to_drive && d.drive_output_link) {
       showToast('✓ Saved to Google Drive');
     }
   } catch (err) {
     document.getElementById(agentPanelId)?.remove();
     if (!orchestrate) removeTyping(typingId);
+
+    if (err.status === 401) {
+      attachedFiles = filesSnapshot;
+      renderAttachments();
+      updateAttachBtn();
+      ta.value = rawPrompt;
+      handleInput(ta);
+      promptForApiKey('This server requires the Irving API key. Enter it, then send again.');
+      appendMessage('ai',
+        'The server requires an Irving API key. Add it when prompted, then retry.',
+        'auto', null, null);
+      return;
+    }
 
     const isNetErr = err.message === 'Failed to fetch' || err.name === 'TypeError'
                   || err.name === 'TimeoutError' || err.name === 'AbortError';
@@ -1061,11 +1264,20 @@ async function sendMessage() {
         try {
           const r2 = await fetch(`${SERVER}${endpoint}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders(true),
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(timeout),
           });
-          if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
+          if (!r2.ok) {
+            let detail = `HTTP ${r2.status}`;
+            try {
+              const errData = await r2.json();
+              detail = errData.detail || errData.error || detail;
+            } catch {}
+            const errRetry = new Error(detail);
+            errRetry.status = r2.status;
+            throw errRetry;
+          }
           const d2 = await r2.json();
           removeTyping(retryId);
           const el2 = ((Date.now() - start) / 1000).toFixed(1);
@@ -1076,6 +1288,8 @@ async function sendMessage() {
           conversationMemory.push({ role: 'assistant', content: d2.response || '' });
           saveMemory();
           updateCurrentConversation(displayMsg, mu2);
+          latestExchange = buildOperationalPayload(rawPrompt || displayMsg, d2.response || '');
+          void maybeRunAutoOps(latestExchange);
           return;
         } catch (err2) {
           removeTyping(retryId);
@@ -1393,7 +1607,20 @@ async function loadContextPrompts() {
   const status = document.getElementById('qpStatus');
 
   try {
-    const res  = await fetch(`${SERVER}/context`, { signal: AbortSignal.timeout(20000) });
+    const res  = await fetch(`${SERVER}/context`, {
+      headers: apiHeaders(false),
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const errData = await res.json();
+        detail = errData.detail || errData.error || detail;
+      } catch {}
+      const err = new Error(detail);
+      err.status = res.status;
+      throw err;
+    }
     const data = await res.json();
     const snaps = data.snapshots || [];
 
@@ -1461,6 +1688,14 @@ async function loadContextPrompts() {
 // ── INIT ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('promptInput').focus();
+  document.getElementById('autoSweepToggle').checked = localStorage.getItem(AUTO_SWEEP_KEY) === '1';
+  document.getElementById('autoSnapshotToggle').checked = localStorage.getItem(AUTO_SNAPSHOT_KEY) === '1';
+  document.getElementById('autoSweepToggle').addEventListener('change', (e) => {
+    localStorage.setItem(AUTO_SWEEP_KEY, e.target.checked ? '1' : '0');
+  });
+  document.getElementById('autoSnapshotToggle').addEventListener('change', (e) => {
+    localStorage.setItem(AUTO_SNAPSHOT_KEY, e.target.checked ? '1' : '0');
+  });
 
   // Restore history list from localStorage
   renderHistory();

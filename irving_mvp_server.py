@@ -2,8 +2,9 @@ import os
 import json
 import base64
 import logging
+import re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,17 +25,69 @@ app.add_middleware(
 )
 
 # ── Config ────────────────────────────────────────────────────────────────────
-NOTION_TOKEN            = os.getenv("NOTION_TOKEN")
-REVIEW_QUEUE_DB_ID      = os.getenv("NOTION_REVIEW_QUEUE_DB_ID")
-CONTEXT_SNAPSHOTS_DB_ID = os.getenv("NOTION_CONTEXT_SNAPSHOTS_DB_ID", "57887d95-300e-4f9d-802c-1283b4132e02")
-ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY")
-OPENAI_API_KEY          = os.getenv("OPENAI_API_KEY")
-GEMINI_API_KEY          = os.getenv("GEMINI_API_KEY")
-IRVING_API_KEY          = os.getenv("IRVING_API_KEY")
-GOOGLE_SA_JSON          = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-DRIVE_OUTPUT_FOLDER_ID  = os.getenv("DRIVE_OUTPUT_FOLDER_ID")
+DEFAULT_CONTEXT_SNAPSHOTS_DB_ID = "57887d95-300e-4f9d-802c-1283b4132e02"
+NOTION_ID_RE = re.compile(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
-notion = NotionClient(auth=NOTION_TOKEN) if NOTION_TOKEN else None
+
+def _env(name: str, default: Optional[str] = None) -> Optional[str]:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip()
+    return value or default
+
+
+def _normalize_notion_id(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    match = NOTION_ID_RE.search(value)
+    if not match:
+        return value.strip()
+    token = match.group(0).replace("-", "").lower()
+    return f"{token[:8]}-{token[8:12]}-{token[12:16]}-{token[16:20]}-{token[20:32]}"
+
+
+def _load_google_service_account_info(raw_value: Optional[str]) -> Optional[dict]:
+    if not raw_value:
+        return None
+
+    candidates = [raw_value.strip()]
+    try:
+        decoded = base64.b64decode(raw_value).decode("utf-8")
+        candidates.insert(0, decoded.strip())
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            info = json.loads(candidate)
+            if isinstance(info, dict):
+                return info
+        except json.JSONDecodeError:
+            continue
+
+    logger.error("GOOGLE_SERVICE_ACCOUNT_JSON is set but is neither valid JSON nor valid base64-encoded JSON")
+    return None
+
+
+NOTION_TOKEN            = _env("NOTION_TOKEN")
+REVIEW_QUEUE_DB_ID      = _normalize_notion_id(_env("NOTION_REVIEW_QUEUE_DB_ID"))
+CONTEXT_SNAPSHOTS_DB_ID = _normalize_notion_id(_env("NOTION_CONTEXT_SNAPSHOTS_DB_ID", DEFAULT_CONTEXT_SNAPSHOTS_DB_ID))
+ANTHROPIC_API_KEY       = _env("ANTHROPIC_API_KEY")
+OPENAI_API_KEY          = _env("OPENAI_API_KEY")
+GEMINI_API_KEY          = _env("GEMINI_API_KEY")
+IRVING_API_KEY          = _env("IRVING_API_KEY")
+GOOGLE_SA_JSON          = _env("GOOGLE_SERVICE_ACCOUNT_JSON")
+GOOGLE_SA_INFO          = _load_google_service_account_info(GOOGLE_SA_JSON)
+DRIVE_OUTPUT_FOLDER_ID  = _env("DRIVE_OUTPUT_FOLDER_ID")
+
+try:
+    notion = NotionClient(auth=NOTION_TOKEN) if NOTION_TOKEN else None
+except Exception as exc:
+    logger.error(f"Failed to initialize Notion client: {exc}")
+    notion = None
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -60,17 +113,30 @@ class QueueItem(BaseModel):
     source_link: Optional[str] = None
 
 
+class SweepRequest(BaseModel):
+    prompt: str
+    response: str
+    conversation: Optional[str] = None
+    max_items: Optional[int] = 5
+
+
+class SnapshotRequest(BaseModel):
+    prompt: str
+    response: str
+    conversation: Optional[str] = None
+    snapshot_name: Optional[str] = None
+    mark_previous_inactive: Optional[bool] = False
+
+
 # ── Google Drive ──────────────────────────────────────────────────────────────
 def _get_drive_service():
-    if not GOOGLE_SA_JSON:
+    if not GOOGLE_SA_INFO:
         return None
     try:
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
-        sa_bytes = base64.b64decode(GOOGLE_SA_JSON)
-        sa_info  = json.loads(sa_bytes.decode("utf-8"))
         creds    = service_account.Credentials.from_service_account_info(
-            sa_info, scopes=["https://www.googleapis.com/auth/drive"]
+            GOOGLE_SA_INFO, scopes=["https://www.googleapis.com/auth/drive"]
         )
         return build("drive", "v3", credentials=creds)
     except Exception as e:
@@ -140,6 +206,56 @@ def _rich_text(prop) -> str:
 def _date(prop) -> str:
     if not prop: return ""
     return (prop.get("date") or {}).get("start", "")
+
+
+def _safe_title_parts(value: str) -> list:
+    text = (value or "").strip()[:1800]
+    return [{"text": {"content": text}}] if text else [{"text": {"content": "Untitled"}}]
+
+
+def _safe_rich_text_parts(value: Optional[str], chunk_size: int = 1800) -> list:
+    text = (value or "").strip()
+    if not text:
+        return []
+    return [{"text": {"content": text[i:i + chunk_size]}} for i in range(0, len(text), chunk_size)]
+
+
+def _extract_json_object(raw: str) -> Dict[str, Any]:
+    if not raw:
+        raise ValueError("Empty model output")
+
+    candidates = []
+    stripped = raw.strip()
+    candidates.append(stripped)
+
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw, re.IGNORECASE)
+    if fence_match:
+        candidates.append(fence_match.group(1).strip())
+
+    brace_match = re.search(r"\{[\s\S]*\}", raw)
+    if brace_match:
+        candidates.append(brace_match.group(0).strip())
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            continue
+
+    raise ValueError(f"Could not parse JSON object from model output: {raw[:300]}")
+
+
+def _first_available_model(*preferred: str) -> Optional[str]:
+    for model_name in preferred:
+        if model_name == "claude" and ANTHROPIC_API_KEY:
+            return "claude"
+        if model_name == "gpt" and OPENAI_API_KEY:
+            return "gpt"
+        if model_name == "gemini" and GEMINI_API_KEY:
+            return "gemini"
+    return None
 
 
 def get_current_snapshots(limit: int = 3) -> list:
@@ -528,6 +644,133 @@ def dispatch(model_req: str, domain: str, system: str, prompt: str) -> tuple:
         raise HTTPException(status_code=502, detail=str(primary_err))
 
 
+def _structured_completion(system: str, prompt: str, domain: str = "business_ops") -> Dict[str, Any]:
+    model_name = _first_available_model("claude", "gpt", "gemini")
+    if not model_name:
+        raise HTTPException(status_code=503, detail="No model API key is configured for operational actions")
+    raw, _ = dispatch(model_name, domain, system, prompt)
+    try:
+        return _extract_json_object(raw)
+    except ValueError as exc:
+        logger.error(f"Structured completion parse failed: {exc}")
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+def _normalize_queue_item(payload: Dict[str, Any]) -> QueueItem:
+    return QueueItem(
+        item=(payload.get("item") or "").strip(),
+        item_type=(payload.get("item_type") or "Task").strip() or "Task",
+        notes=(payload.get("notes") or "").strip() or None,
+        source="ChatGPT",
+        priority=(payload.get("priority") or "Medium").strip() or "Medium",
+        source_link=(payload.get("source_link") or "").strip() or None,
+    )
+
+
+def _build_review_sweep(req: SweepRequest) -> List[QueueItem]:
+    system = (
+        "You extract actionable operational items from AI conversations. "
+        "Return ONLY JSON with this shape: "
+        '{"queue_items":[{"item":"", "item_type":"Task|Project Update|Decision|Follow-up|Idea|Research Request|Admin|Risk|Reference", '
+        '"notes":"", "priority":"High|Medium|Low"}]}. '
+        "Include only concrete items worth saving to a review queue. "
+        "Do not invent facts. Use an empty array if nothing merits capture."
+    )
+    prompt = (
+        f"User prompt:\n{req.prompt}\n\n"
+        f"Assistant response:\n{req.response}\n\n"
+        f"Conversation context:\n{req.conversation or ''}\n\n"
+        f"Maximum items: {max(1, min(req.max_items or 5, 10))}"
+    )
+    payload = _structured_completion(system, prompt, domain="business_ops")
+    queue_items = payload.get("queue_items") or []
+    normalized: List[QueueItem] = []
+    for raw_item in queue_items:
+        if not isinstance(raw_item, dict):
+            continue
+        item = _normalize_queue_item(raw_item)
+        if item.item:
+            normalized.append(item)
+    return normalized[:max(1, min(req.max_items or 5, 10))]
+
+
+def _build_snapshot_payload(req: SnapshotRequest) -> Dict[str, str]:
+    system = (
+        "You convert an AI conversation into a structured project snapshot. "
+        "Return ONLY JSON with keys: "
+        '{"snapshot_name":"", "current_state":"", "top_3_priorities":"", "recent_decisions":"", '
+        '"open_questions":"", "risks_blockers":"", "recommended_next_moves":""}. '
+        "Be concise, concrete, and operational. If a section is unknown, return an empty string."
+    )
+    prompt = (
+        f"Preferred snapshot name: {req.snapshot_name or ''}\n\n"
+        f"User prompt:\n{req.prompt}\n\n"
+        f"Assistant response:\n{req.response}\n\n"
+        f"Conversation context:\n{req.conversation or ''}"
+    )
+    payload = _structured_completion(system, prompt, domain="strategy")
+    snapshot_name = (req.snapshot_name or payload.get("snapshot_name") or "").strip()
+    if not snapshot_name:
+        domain = detect_domain(req.prompt).replace("_", " ").title()
+        snapshot_name = f"{domain} Snapshot {datetime.utcnow().strftime('%Y-%m-%d')}"
+    return {
+        "snapshot_name": snapshot_name[:1800],
+        "current_state": (payload.get("current_state") or "").strip(),
+        "top_3_priorities": (payload.get("top_3_priorities") or "").strip(),
+        "recent_decisions": (payload.get("recent_decisions") or "").strip(),
+        "open_questions": (payload.get("open_questions") or "").strip(),
+        "risks_blockers": (payload.get("risks_blockers") or "").strip(),
+        "recommended_next_moves": (payload.get("recommended_next_moves") or "").strip(),
+    }
+
+
+def _mark_existing_snapshots_inactive() -> int:
+    if not notion or not CONTEXT_SNAPSHOTS_DB_ID:
+        return 0
+    updated = 0
+    try:
+        response = notion.databases.query(
+            database_id=CONTEXT_SNAPSHOTS_DB_ID,
+            filter={"property": "Still Current?", "checkbox": {"equals": True}},
+            page_size=50,
+        )
+        for page in response.get("results", []):
+            notion.pages.update(page_id=page["id"], properties={"Still Current?": {"checkbox": False}})
+            updated += 1
+    except Exception as exc:
+        logger.error(f"Error marking prior snapshots inactive: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to archive prior current snapshots: {exc}")
+    return updated
+
+
+def create_context_snapshot(snapshot: Dict[str, str], mark_previous_inactive: bool = False) -> dict:
+    if not notion or not CONTEXT_SNAPSHOTS_DB_ID:
+        raise HTTPException(status_code=503, detail="Context snapshots database is not configured")
+
+    archived_count = _mark_existing_snapshots_inactive() if mark_previous_inactive else 0
+    properties = {
+        "Snapshot Name": {"title": _safe_title_parts(snapshot["snapshot_name"])},
+        "Snapshot Date": {"date": {"start": datetime.utcnow().date().isoformat()}},
+        "Current State": {"rich_text": _safe_rich_text_parts(snapshot.get("current_state"))},
+        "Top 3 Priorities": {"rich_text": _safe_rich_text_parts(snapshot.get("top_3_priorities"))},
+        "Recent Decisions": {"rich_text": _safe_rich_text_parts(snapshot.get("recent_decisions"))},
+        "Open Questions": {"rich_text": _safe_rich_text_parts(snapshot.get("open_questions"))},
+        "Risks / Blockers": {"rich_text": _safe_rich_text_parts(snapshot.get("risks_blockers"))},
+        "Recommended Next Moves": {"rich_text": _safe_rich_text_parts(snapshot.get("recommended_next_moves"))},
+        "Still Current?": {"checkbox": True},
+    }
+
+    try:
+        page = notion.pages.create(
+            parent={"database_id": CONTEXT_SNAPSHOTS_DB_ID},
+            properties=properties,
+        )
+        return {"id": page["id"], "url": page["url"], "archived_count": archived_count}
+    except Exception as exc:
+        logger.error(f"Error creating context snapshot: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 # ── Notion Review Queue ───────────────────────────────────────────────────────
 def push_to_review_queue(item: QueueItem) -> dict:
     if not notion or not REVIEW_QUEUE_DB_ID:
@@ -666,7 +909,9 @@ async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security
     Falls back to single-agent /run if the prompt is single-domain.
     """
     verify_api_key(api_key)
-    context_block = build_context_block(get_current_snapshots(), get_drive_context())
+    snapshots = get_current_snapshots()
+    drive_context = get_drive_context()
+    context_block = build_context_block(snapshots, drive_context)
 
     # ?? Step 1: Decompose ????????????????????????????????????????????????????
     decomp = _decompose_prompt(req.prompt)
@@ -676,7 +921,7 @@ async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security
         # Single domain - use normal dispatch
         system, domain = build_expert_system(req.prompt, context_block)
         try:
-            response, model_used = dispatch(req.prompt, system, req.model)
+            response, model_used = dispatch(req.model, domain, system, req.prompt)
         except HTTPException:
             raise
         except Exception as e:
@@ -688,6 +933,8 @@ async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security
             "orchestrated":  False,
             "agents":        [],
             "reasoning":     decomp.get("reasoning", ""),
+            "notion_context_used": bool(snapshots),
+            "drive_context_used": bool(drive_context),
         }
 
     # ?? Step 2: Parallel agent dispatch ?????????????????????????????????????
@@ -720,7 +967,7 @@ async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security
         "creating a unified narrative. Be direct and action-oriented."
     )
     try:
-        final_response, _ = dispatch(synthesis_prompt, synthesis_system, "claude")
+        final_response, _ = dispatch("claude", "default", synthesis_system, synthesis_prompt)
     except Exception:
         # Graceful fallback: structured concatenation
         final_response = "\n\n".join(
@@ -734,6 +981,8 @@ async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security
         "orchestrated": True,
         "agents":      [{"domain": r["domain"], "model": r["model"], "error": r["error"]} for r in results],
         "reasoning":   decomp.get("reasoning", ""),
+        "notion_context_used": bool(snapshots),
+        "drive_context_used": bool(drive_context),
     }
 
 class CadRequest(BaseModel):
@@ -771,7 +1020,7 @@ async def cad_endpoint(req: CadRequest, api_key: Optional[str] = Security(api_ke
     )
 
     try:
-        response_text, model_used = dispatch(augmented_prompt, system, "claude")
+        response_text, model_used = dispatch(req.model, "cad", system, augmented_prompt)
         # Detect which script format was used
         script_format = "scr"
         if "```autolisp" in response_text.lower():
@@ -844,6 +1093,8 @@ async def run(request: RunRequest, api_key: Optional[str] = Security(api_key_hea
         "domain":                     domain,
         "context_snapshots_injected": len(snapshots),
         "drive_context_injected":     bool(drive_context),
+        "notion_context_used":        bool(snapshots),
+        "drive_context_used":         bool(drive_context),
         "drive_output_link":          drive_link,
     }
 
@@ -853,3 +1104,28 @@ async def queue(item: QueueItem, api_key: Optional[str] = Security(api_key_heade
     verify_api_key(api_key)
     result = push_to_review_queue(item)
     return {"success": True, "notion_page": result}
+
+
+@app.post("/ops/sweep")
+async def sweep(req: SweepRequest, api_key: Optional[str] = Security(api_key_header)):
+    verify_api_key(api_key)
+    queue_items = _build_review_sweep(req)
+    created = [push_to_review_queue(item) for item in queue_items]
+    return {
+        "success": True,
+        "queued_count": len(created),
+        "queue_items": [item.dict() for item in queue_items],
+        "notion_pages": created,
+    }
+
+
+@app.post("/ops/snapshot")
+async def snapshot(req: SnapshotRequest, api_key: Optional[str] = Security(api_key_header)):
+    verify_api_key(api_key)
+    snapshot_payload = _build_snapshot_payload(req)
+    created = create_context_snapshot(snapshot_payload, mark_previous_inactive=bool(req.mark_previous_inactive))
+    return {
+        "success": True,
+        "snapshot": snapshot_payload,
+        "notion_page": created,
+    }
