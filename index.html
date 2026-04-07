@@ -750,6 +750,7 @@ let selectedModel = 'auto';
 let isLoading = false;
 let attachedFiles = [];   // { name, type, content, dataUrl }
 let latestExchange = null;
+let serverAuthMode = 'unknown';
 
 // ── PERSISTENT CONVERSATION MEMORY ──────────────────────
 // Each entry: { role: 'user'|'assistant', content: string }
@@ -801,6 +802,7 @@ function buildConversationTranscript() {
 
 function apiHeaders(includeJson = true) {
   const headers = includeJson ? { 'Content-Type': 'application/json' } : {};
+  if (serverAuthMode === 'open') return headers;
   const apiKey = (localStorage.getItem(API_KEY_STORAGE) || '').trim();
   if (apiKey) headers['X-API-Key'] = apiKey;
   return headers;
@@ -1022,17 +1024,13 @@ async function checkHealth(isRetry = false) {
     // Render free tier sleeps after 15 min — allow up to 55s for cold start
     const r = await fetch(`${SERVER}/health`, { signal: AbortSignal.timeout(55000) });
     const d = await r.json();
+    serverAuthMode = d.auth || 'unknown';
     const allReady = d.status === 'ok';
     dot.className = allReady ? 'status-dot ok' : 'status-dot err';
     const models = Object.entries(d.models || {})
       .filter(([,v]) => v === 'ready').map(([k]) => k.toUpperCase()).join(' · ');
     text.textContent = allReady ? `Live · ${models}` : 'Degraded';
   } catch (e) {
-    if (e.status === 401) {
-      status.textContent = 'auth';
-      status.title = 'Server requires Irving API key for context';
-      return;
-    }
     if (!isRetry && e.name === 'TimeoutError') {
       // First timeout — server may be cold-starting, retry once
       text.textContent = 'Waking up…';
@@ -1173,6 +1171,7 @@ async function sendMessage() {
       throw err;
     }
     const d = await r.json();
+    serverAuthMode = d.auth || 'unknown';
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
     // Update agent panel with results before removing
