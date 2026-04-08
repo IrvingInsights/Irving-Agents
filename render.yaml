@@ -23,3 +23,5 @@ services:
         sync: false
       - key: DRIVE_OUTPUT_FOLDER_ID
         sync: false
+      - key: IRVING_HISTORY_DB_PATH
+        sync: false

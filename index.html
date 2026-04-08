@@ -759,8 +759,22 @@ const CONV_KEY  = 'irving_conversations';
 const AUTO_SWEEP_KEY = 'irving_auto_sweep';
 const AUTO_SNAPSHOT_KEY = 'irving_auto_snapshot';
 const API_KEY_STORAGE = 'irving_api_key';
+const USER_KEY = 'irving_user_id';
 const MAX_TURNS = 10;
 const CTX_CHARS = 8000;
+
+function loadOrCreateUserId() {
+  let value = (localStorage.getItem(USER_KEY) || '').trim();
+  if (!value) {
+    value = (window.crypto?.randomUUID?.() || `user_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    localStorage.setItem(USER_KEY, value);
+  }
+  return value;
+}
+
+const userId = loadOrCreateUserId();
+let historySyncReady = false;
+let historySyncTimer = null;
 
 let conversationMemory = loadMemory();
 let conversations      = loadConversations();
@@ -771,6 +785,7 @@ function loadMemory() {
 }
 function saveMemory() {
   try { localStorage.setItem(MEM_KEY, JSON.stringify(conversationMemory.slice(-MAX_TURNS * 2))); } catch {}
+  scheduleHistorySync();
 }
 function loadConversations() {
   try { return JSON.parse(localStorage.getItem(CONV_KEY) || '[]'); } catch { return []; }
@@ -778,6 +793,49 @@ function loadConversations() {
 function saveConversations() {
   try { localStorage.setItem(CONV_KEY, JSON.stringify(conversations.slice(0, 30))); 
 } catch {}
+  scheduleHistorySync();
+}
+
+function serializeHistoryState() {
+  return {
+    user_id: userId,
+    current_conv_id: currentConvId,
+    conversation_memory: conversationMemory.slice(-MAX_TURNS * 2),
+    conversations: conversations.slice(0, 30),
+  };
+}
+
+function scheduleHistorySync() {
+  if (!historySyncReady) return;
+  clearTimeout(historySyncTimer);
+  historySyncTimer = setTimeout(() => {
+    syncHistoryState().catch(err => console.warn('history sync failed', err));
+  }, 300);
+}
+
+async function syncHistoryState() {
+  return postJson('/history/state', serializeHistoryState(), 15000);
+}
+
+async function hydrateHistoryState() {
+  try {
+    const res = await fetch(`${SERVER}/history/state?user_id=${encodeURIComponent(userId)}`, {
+      headers: apiHeaders(false),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data?.found) return false;
+    conversationMemory = Array.isArray(data.conversation_memory) ? data.conversation_memory : [];
+    conversations = Array.isArray(data.conversations) ? data.conversations : [];
+    currentConvId = data.current_conv_id || conversations[0]?.id || currentConvId;
+    try { localStorage.setItem(MEM_KEY, JSON.stringify(conversationMemory)); } catch {}
+    try { localStorage.setItem(CONV_KEY, JSON.stringify(conversations)); } catch {}
+    return true;
+  } catch (err) {
+    console.warn('history hydrate failed', err);
+    return false;
+  }
 }
 
 function buildConversationContext() {
@@ -1407,8 +1465,9 @@ function loadConversation(convId) {
   const conv = conversations.find(cv => cv.id === convId);
   if (!conv) return;
   conversationMemory = conv.messages.slice();
-  saveMemory();
   currentConvId = convId;
+  saveMemory();
+  scheduleHistorySync();
   const msgEl = document.getElementById('messages');
   msgEl.innerHTML = '';
   const welcome = document.getElementById('welcomeState');
@@ -1431,6 +1490,7 @@ function newChat() {
   currentConvId      = 'conv_' + Date.now();
   conversationMemory = [];
   saveMemory();
+  scheduleHistorySync();
   const msgEl = document.getElementById('messages');
   msgEl.innerHTML = '<div id="welcomeState" class="welcome-state"><div class="welcome-title">Irving Insights</div><div class="welcome-sub">Ready, Daniel. New conversation.</div></div>';
   renderHistory();
@@ -1478,7 +1538,9 @@ function toggleHistory() {
 function clearHistory() {
   if (!confirm('Delete all saved conversations?')) return;
   conversations  = [];
+  conversationMemory = [];
   currentConvId  = 'conv_' + Date.now();
+  saveMemory();
   saveConversations();
   renderHistory();
   showToast('All conversations cleared');
@@ -1685,7 +1747,7 @@ async function loadContextPrompts() {
 }
 
 // ── INIT ────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('promptInput').focus();
   document.getElementById('autoSweepToggle').checked = localStorage.getItem(AUTO_SWEEP_KEY) === '1';
   document.getElementById('autoSnapshotToggle').checked = localStorage.getItem(AUTO_SNAPSHOT_KEY) === '1';
@@ -1696,8 +1758,15 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem(AUTO_SNAPSHOT_KEY, e.target.checked ? '1' : '0');
   });
 
-  // Restore history list from localStorage
-  renderHistory();
+  await hydrateHistoryState();
+  historySyncReady = true;
+
+  // Restore history list from persisted/local storage
+  if (conversationMemory.length > 0 && conversations.some(cv => cv.id === currentConvId)) {
+    loadConversation(currentConvId);
+  } else {
+    renderHistory();
+  }
 
   // Restore history collapse state
   const histOpen = localStorage.getItem('irving_hist_open');

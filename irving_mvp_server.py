@@ -3,7 +3,10 @@ import json
 import base64
 import logging
 import re
+import sqlite3
+import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Security
@@ -82,6 +85,7 @@ IRVING_API_KEY          = _env("IRVING_API_KEY")
 GOOGLE_SA_JSON          = _env("GOOGLE_SERVICE_ACCOUNT_JSON")
 GOOGLE_SA_INFO          = _load_google_service_account_info(GOOGLE_SA_JSON)
 DRIVE_OUTPUT_FOLDER_ID  = _env("DRIVE_OUTPUT_FOLDER_ID")
+HISTORY_DB_PATH         = Path(_env("IRVING_HISTORY_DB_PATH", "data/irving_history.db")).expanduser()
 
 try:
     notion = NotionClient(auth=NOTION_TOKEN) if NOTION_TOKEN else None
@@ -90,6 +94,33 @@ except Exception as exc:
     notion = None
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+_history_lock = threading.Lock()
+
+
+def _history_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(HISTORY_DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _init_history_db() -> None:
+    HISTORY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with _history_conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversation_state (
+                user_id TEXT PRIMARY KEY,
+                current_conv_id TEXT,
+                conversation_memory TEXT NOT NULL,
+                conversations TEXT NOT NULL,
+                last_updated TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
+_init_history_db()
 
 
 def verify_api_key(api_key: Optional[str] = Security(api_key_header)):
@@ -126,6 +157,13 @@ class SnapshotRequest(BaseModel):
     conversation: Optional[str] = None
     snapshot_name: Optional[str] = None
     mark_previous_inactive: Optional[bool] = False
+
+
+class HistoryStateRequest(BaseModel):
+    user_id: str
+    current_conv_id: Optional[str] = None
+    conversation_memory: List[Dict[str, Any]] = []
+    conversations: List[Dict[str, Any]] = []
 
 
 # ── Google Drive ──────────────────────────────────────────────────────────────
@@ -771,6 +809,95 @@ def create_context_snapshot(snapshot: Dict[str, str], mark_previous_inactive: bo
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+def _normalize_history_messages(messages: List[Dict[str, Any]], limit: int = 20) -> List[Dict[str, str]]:
+    normalized: List[Dict[str, str]] = []
+    for msg in (messages or [])[-limit:]:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "")[:32]
+        content = str(msg.get("content") or "")[:12000]
+        if role and content:
+            normalized.append({"role": role, "content": content})
+    return normalized
+
+
+def _normalize_history_conversations(conversations: List[Dict[str, Any]], limit: int = 30) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for conv in (conversations or [])[:limit]:
+        if not isinstance(conv, dict):
+            continue
+        conv_id = str(conv.get("id") or "").strip()
+        if not conv_id:
+            continue
+        normalized.append({
+            "id": conv_id[:128],
+            "title": str(conv.get("title") or "")[:200],
+            "model": str(conv.get("model") or "auto")[:64],
+            "ts": int(conv.get("ts") or 0),
+            "messages": _normalize_history_messages(conv.get("messages") or [], limit=60),
+        })
+    return normalized
+
+
+def read_history_state(user_id: str) -> Dict[str, Any]:
+    with _history_lock, _history_conn() as conn:
+        row = conn.execute(
+            "SELECT user_id, current_conv_id, conversation_memory, conversations, last_updated FROM conversation_state WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return {
+            "found": False,
+            "user_id": user_id,
+            "current_conv_id": None,
+            "conversation_memory": [],
+            "conversations": [],
+            "last_updated": None,
+        }
+    return {
+        "found": True,
+        "user_id": row["user_id"],
+        "current_conv_id": row["current_conv_id"],
+        "conversation_memory": json.loads(row["conversation_memory"]),
+        "conversations": json.loads(row["conversations"]),
+        "last_updated": row["last_updated"],
+    }
+
+
+def write_history_state(state: HistoryStateRequest) -> Dict[str, Any]:
+    user_id = state.user_id.strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    payload = {
+        "current_conv_id": (state.current_conv_id or "").strip() or None,
+        "conversation_memory": _normalize_history_messages(state.conversation_memory),
+        "conversations": _normalize_history_conversations(state.conversations),
+    }
+    now = datetime.utcnow().isoformat()
+    with _history_lock, _history_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO conversation_state (user_id, current_conv_id, conversation_memory, conversations, last_updated)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                current_conv_id = excluded.current_conv_id,
+                conversation_memory = excluded.conversation_memory,
+                conversations = excluded.conversations,
+                last_updated = excluded.last_updated
+            """,
+            (
+                user_id,
+                payload["current_conv_id"],
+                json.dumps(payload["conversation_memory"], ensure_ascii=False),
+                json.dumps(payload["conversations"], ensure_ascii=False),
+                now,
+            ),
+        )
+        conn.commit()
+    return {"success": True, "user_id": user_id, "last_updated": now, **payload}
+
+
 # ── Notion Review Queue ───────────────────────────────────────────────────────
 def push_to_review_queue(item: QueueItem) -> dict:
     if not notion or not REVIEW_QUEUE_DB_ID:
@@ -823,6 +950,18 @@ async def health():
         "auth":      "enabled" if IRVING_API_KEY else "open",
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+@app.get("/history/state")
+async def get_history_state(user_id: str, api_key: Optional[str] = Security(api_key_header)):
+    verify_api_key(api_key)
+    return read_history_state(user_id.strip())
+
+
+@app.post("/history/state")
+async def put_history_state(state: HistoryStateRequest, api_key: Optional[str] = Security(api_key_header)):
+    verify_api_key(api_key)
+    return write_history_state(state)
 
 
 @app.get("/debug-notion")
