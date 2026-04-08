@@ -23,5 +23,7 @@ services:
         sync: false
       - key: DRIVE_OUTPUT_FOLDER_ID
         sync: false
-      - key: IRVING_HISTORY_DB_PATH
+      - key: FIRESTORE_PROJECT_ID
+        sync: false
+      - key: FIRESTORE_HISTORY_COLLECTION
         sync: false

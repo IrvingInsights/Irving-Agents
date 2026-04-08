@@ -1,12 +1,11 @@
 import os
 import json
 import base64
+import hashlib
 import logging
 import re
-import sqlite3
 import threading
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Security
@@ -85,7 +84,8 @@ IRVING_API_KEY          = _env("IRVING_API_KEY")
 GOOGLE_SA_JSON          = _env("GOOGLE_SERVICE_ACCOUNT_JSON")
 GOOGLE_SA_INFO          = _load_google_service_account_info(GOOGLE_SA_JSON)
 DRIVE_OUTPUT_FOLDER_ID  = _env("DRIVE_OUTPUT_FOLDER_ID")
-HISTORY_DB_PATH         = Path(_env("IRVING_HISTORY_DB_PATH", "data/irving_history.db")).expanduser()
+FIRESTORE_PROJECT_ID    = _env("FIRESTORE_PROJECT_ID")
+FIRESTORE_COLLECTION    = _env("FIRESTORE_HISTORY_COLLECTION", "conversation_state")
 
 try:
     notion = NotionClient(auth=NOTION_TOKEN) if NOTION_TOKEN else None
@@ -95,37 +95,33 @@ except Exception as exc:
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 _history_lock = threading.Lock()
-
-
-def _history_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(HISTORY_DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _init_history_db() -> None:
-    HISTORY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with _history_conn() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS conversation_state (
-                user_id TEXT PRIMARY KEY,
-                current_conv_id TEXT,
-                conversation_memory TEXT NOT NULL,
-                conversations TEXT NOT NULL,
-                last_updated TEXT NOT NULL
-            )
-            """
-        )
-        conn.commit()
-
-
-_init_history_db()
+_firestore_client = None
 
 
 def verify_api_key(api_key: Optional[str] = Security(api_key_header)):
     if IRVING_API_KEY and api_key != IRVING_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key header")
+
+
+def _get_firestore_client():
+    global _firestore_client
+    if _firestore_client is not None:
+        return _firestore_client
+    try:
+        from google.cloud import firestore
+
+        kwargs = {}
+        if FIRESTORE_PROJECT_ID:
+            kwargs["project"] = FIRESTORE_PROJECT_ID
+        _firestore_client = firestore.Client(**kwargs)
+        return _firestore_client
+    except Exception as exc:
+        logger.error(f"Failed to initialize Firestore client: {exc}")
+        return None
+
+
+def _history_doc_id(user_id: str) -> str:
+    return hashlib.sha256(user_id.encode("utf-8")).hexdigest()
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -840,12 +836,17 @@ def _normalize_history_conversations(conversations: List[Dict[str, Any]], limit:
 
 
 def read_history_state(user_id: str) -> Dict[str, Any]:
-    with _history_lock, _history_conn() as conn:
-        row = conn.execute(
-            "SELECT user_id, current_conv_id, conversation_memory, conversations, last_updated FROM conversation_state WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-    if not row:
+    client = _get_firestore_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="Firestore is not configured")
+    try:
+        with _history_lock:
+            doc = client.collection(FIRESTORE_COLLECTION).document(_history_doc_id(user_id)).get()
+    except Exception as exc:
+        logger.error(f"Error reading history state: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to read history state: {exc}")
+
+    if not doc.exists:
         return {
             "found": False,
             "user_id": user_id,
@@ -854,13 +855,14 @@ def read_history_state(user_id: str) -> Dict[str, Any]:
             "conversations": [],
             "last_updated": None,
         }
+    data = doc.to_dict() or {}
     return {
         "found": True,
-        "user_id": row["user_id"],
-        "current_conv_id": row["current_conv_id"],
-        "conversation_memory": json.loads(row["conversation_memory"]),
-        "conversations": json.loads(row["conversations"]),
-        "last_updated": row["last_updated"],
+        "user_id": data.get("user_id") or user_id,
+        "current_conv_id": data.get("current_conv_id"),
+        "conversation_memory": data.get("conversation_memory") or [],
+        "conversations": data.get("conversations") or [],
+        "last_updated": data.get("last_updated"),
     }
 
 
@@ -875,26 +877,23 @@ def write_history_state(state: HistoryStateRequest) -> Dict[str, Any]:
         "conversations": _normalize_history_conversations(state.conversations),
     }
     now = datetime.utcnow().isoformat()
-    with _history_lock, _history_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO conversation_state (user_id, current_conv_id, conversation_memory, conversations, last_updated)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                current_conv_id = excluded.current_conv_id,
-                conversation_memory = excluded.conversation_memory,
-                conversations = excluded.conversations,
-                last_updated = excluded.last_updated
-            """,
-            (
-                user_id,
-                payload["current_conv_id"],
-                json.dumps(payload["conversation_memory"], ensure_ascii=False),
-                json.dumps(payload["conversations"], ensure_ascii=False),
-                now,
-            ),
-        )
-        conn.commit()
+    client = _get_firestore_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="Firestore is not configured")
+    try:
+        with _history_lock:
+            client.collection(FIRESTORE_COLLECTION).document(_history_doc_id(user_id)).set(
+                {
+                    "user_id": user_id,
+                    "current_conv_id": payload["current_conv_id"],
+                    "conversation_memory": payload["conversation_memory"],
+                    "conversations": payload["conversations"],
+                    "last_updated": now,
+                }
+            )
+    except Exception as exc:
+        logger.error(f"Error writing history state: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to write history state: {exc}")
     return {"success": True, "user_id": user_id, "last_updated": now, **payload}
 
 
@@ -937,10 +936,12 @@ def push_to_review_queue(item: QueueItem) -> dict:
 async def health():
     """Public -- no auth required."""
     notion_ok = bool(NOTION_TOKEN and REVIEW_QUEUE_DB_ID and CONTEXT_SNAPSHOTS_DB_ID)
+    firestore_ok = bool(_get_firestore_client())
     return {
         "status": "ok",
         "notion": "connected" if notion_ok else "not configured",
         "drive":  "configured" if GOOGLE_SA_JSON else "not configured",
+        "history": "configured" if firestore_ok else "not configured",
         "models": {
             "claude": "ready" if ANTHROPIC_API_KEY else "no key",
             "gpt":    "ready" if OPENAI_API_KEY    else "no key",

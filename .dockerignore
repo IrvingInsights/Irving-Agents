@@ -1,0 +1,15 @@
+.git
+.github
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+node_modules/
+orch_result.json
+orch_test_result.txt
+git_log.txt
+*.bat
+*.ps1

@@ -745,7 +745,14 @@
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────
-const SERVER = 'https://irving-mvp.onrender.com';
+const DEFAULT_SERVER = window.location.hostname.includes('github.io')
+  ? 'https://irving-mvp.onrender.com'
+  : window.location.origin;
+const serverUrlParam = new URLSearchParams(window.location.search).get('server');
+if (serverUrlParam) {
+  localStorage.setItem('irving_server_url', serverUrlParam);
+}
+const SERVER = (localStorage.getItem('irving_server_url') || DEFAULT_SERVER).replace(/\/$/, '');
 let selectedModel = 'auto';
 let isLoading = false;
 let attachedFiles = [];   // { name, type, content, dataUrl }
