@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from notion_client import Client as NotionClient
 
@@ -25,6 +26,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+INDEX_HTML_PATH = os.path.join(APP_DIR, "index.html")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DEFAULT_CONTEXT_SNAPSHOTS_DB_ID = "57887d95-300e-4f9d-802c-1283b4132e02"
@@ -951,6 +955,13 @@ async def health():
         "auth":      "enabled" if IRVING_API_KEY else "open",
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+@app.get("/")
+async def serve_index():
+    if not os.path.exists(INDEX_HTML_PATH):
+        raise HTTPException(status_code=404, detail="Frontend not found")
+    return FileResponse(INDEX_HTML_PATH, media_type="text/html")
 
 
 @app.get("/history/state")
