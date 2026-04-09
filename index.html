@@ -746,13 +746,28 @@
 <script>
 // ── CONFIG ──────────────────────────────────────────────
 const DEFAULT_SERVER = window.location.hostname.includes('github.io')
-  ? 'https://irving-mvp-m4j4uvbgea-uc.a.run.app'
+  ? 'https://irving-mvp-651998378461.us-central1.run.app'
   : window.location.origin;
+const CANONICAL_CLOUD_RUN_SERVER = 'https://irving-mvp-651998378461.us-central1.run.app';
+const LEGACY_SERVER_URLS = new Set([
+  'https://irving-mvp.onrender.com',
+  'https://irving-mvp-m4j4uvbgea-uc.a.run.app',
+]);
+function normalizeServerUrl(url) {
+  if (!url) return '';
+  const trimmed = String(url).replace(/\/$/, '');
+  if (LEGACY_SERVER_URLS.has(trimmed)) return CANONICAL_CLOUD_RUN_SERVER;
+  return trimmed;
+}
 const serverUrlParam = new URLSearchParams(window.location.search).get('server');
 if (serverUrlParam) {
-  localStorage.setItem('irving_server_url', serverUrlParam);
+  localStorage.setItem('irving_server_url', normalizeServerUrl(serverUrlParam));
 }
-const SERVER = (localStorage.getItem('irving_server_url') || DEFAULT_SERVER).replace(/\/$/, '');
+const storedServer = normalizeServerUrl(localStorage.getItem('irving_server_url'));
+if (storedServer) {
+  localStorage.setItem('irving_server_url', storedServer);
+}
+const SERVER = storedServer || DEFAULT_SERVER;
 let selectedModel = 'auto';
 let isLoading = false;
 let attachedFiles = [];   // { name, type, content, dataUrl }
@@ -1086,7 +1101,7 @@ async function checkHealth(isRetry = false) {
   dot.className  = 'status-dot';
   text.textContent = isRetry ? 'Waking up…' : 'Connecting…';
   try {
-    // Render free tier sleeps after 15 min — allow up to 55s for cold start
+    // Cloud Run may scale to zero — allow up to 55s for cold start
     const r = await fetch(`${SERVER}/health`, { signal: AbortSignal.timeout(55000) });
     const d = await r.json();
     serverAuthMode = d.auth || 'unknown';
@@ -1201,7 +1216,8 @@ async function sendMessage() {
     store_to_drive: document.getElementById('driveToggle').checked,
   };
   const endpoint = orchestrate ? '/orchestrate' : '/run';
-  const timeout  = orchestrate ? 120000 : 60000;   // orchestration needs more time
+  const timeout  = orchestrate ? 180000 : 120000;
+  const retryTimeout = orchestrate ? 240000 : 180000;
 
   try {
 
@@ -1312,7 +1328,7 @@ async function sendMessage() {
       stxt.textContent = 'Waking up…';
       showToast('Server waking up — retrying when ready…');
 
-      const serverReady = await waitForServerReady(55000);
+      const serverReady = await waitForServerReady(90000);
 
       if (!serverReady) {
         dot.className    = 'status-dot err';
@@ -1330,7 +1346,7 @@ async function sendMessage() {
             method: 'POST',
             headers: apiHeaders(true),
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(timeout),
+            signal: AbortSignal.timeout(retryTimeout),
           });
           if (!r2.ok) {
             let detail = `HTTP ${r2.status}`;
@@ -1358,7 +1374,7 @@ async function sendMessage() {
         } catch (err2) {
           removeTyping(retryId);
           appendMessage('ai',
-            `Request failed after server woke up (${err2.message}). Please try again.`,
+            `Request failed after server woke up (${err2.message}). The server is live, but the reply exceeded the browser timeout. Try again or send a shorter prompt.`,
             'auto', null, null);
         }
       }
