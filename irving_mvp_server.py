@@ -494,7 +494,7 @@ EXPERT_PERSONAS = {
     "cad": (
         "You are an expert AutoCAD drafter, AutoLISP programmer, and computational design specialist. "
         "You help Daniel Irving translate natural language design intent into precise AutoCAD commands, "
-        "scripts, and parametric routines - primarily for the PeakHinge A-frame dwelling project and "
+        "scripts, FreeCAD macros, and parametric routines - primarily for the PeakHinge A-frame dwelling project and "
         "related structural/architectural work, but also for any technical drawing need.\n\n"
         "Your core capabilities:\n"
         "1. AutoCAD Script Files (.scr) - plain-text command sequences loadable directly via AutoCAD's "
@@ -502,12 +502,14 @@ EXPERT_PERSONAS = {
         "2. AutoLISP Routines (.lsp) - parametric scripts for formula-driven or repetitive geometry; "
         "loaded via (load \"filename.lsp\") or the APPLOAD dialog\n"
         "3. DXF content - structured geometry for import into AutoCAD, FreeCAD, or any CAD platform\n"
-        "4. Natural language to command translation - convert plain English descriptions into exact "
+        "4. FreeCAD Python macros - parametric 3D model generation for FreeCAD / FreeCADCmd execution\n"
+        "5. Natural language to command translation - convert plain English descriptions into exact "
         "AutoCAD command sequences\n\n"
         "Output format rules (ALWAYS follow these):\n"
         "- Wrap AutoCAD script content in ```autocad code blocks\n"
         "- Wrap AutoLISP code in ```autolisp code blocks\n"
         "- Wrap DXF content in ```dxf code blocks\n"
+        "- Wrap FreeCAD macros in ```python code blocks\n"
         "- Always explain what the script draws and exactly how to run it in AutoCAD\n"
         "- Lead with a brief summary of what the output will produce\n\n"
         "Technical standards:\n"
@@ -519,6 +521,8 @@ EXPERT_PERSONAS = {
         "- For structural drawings: include dimension strings, leader notes, and title block placeholder\n"
         "- DXF output uses R2013 format for maximum compatibility\n"
         "- In AutoLISP: define variables at the top, add inline comments, end with a usage docstring\n"
+        "- In FreeCAD Python output: define exactly one callable function named build_model(doc)\n"
+        "- In FreeCAD Python output: import only what you need, create geometry inside build_model(doc), and return the main export objects\n"
         "- Always state assumptions about units, origin point, and coordinate system\n"
         "- Flag any geometry that requires field verification or engineering stamp"
     ),
@@ -1160,21 +1164,27 @@ async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security
 
 class CadRequest(BaseModel):
     prompt:    str
-    format:    str  = "auto"   # "auto" | "scr" | "lsp" | "dxf"
+    format:    str  = "auto"   # "auto" | "scr" | "lsp" | "dxf" | "freecad"
     model:     str  = "auto"
 
 @app.post("/cad")
 async def cad_endpoint(req: CadRequest, api_key: Optional[str] = Security(api_key_header)):
-    """Natural language ? AutoCAD script/routine with downloadable output."""
+    """Natural language to CAD / FreeCAD output with downloadable code."""
     verify_api_key(api_key)
     fmt_hint = {
         "scr": "Generate an AutoCAD script (.scr) file. Use ```autocad code blocks.",
         "lsp": "Generate an AutoLISP routine (.lsp). Use ```autolisp code blocks.",
         "dxf": "Generate a DXF file fragment. Use ```dxf code blocks.",
+        "freecad": (
+            "Generate a FreeCAD Python macro. Use one ```python code block only. "
+            "The code must define build_model(doc). Inside that function, create the model in FreeCAD, "
+            "recompute the document, and return the main objects to export."
+        ),
         "auto": (
             "Choose the best output format: .scr for simple draw commands, "
-            ".lsp for parametric/formulaic geometry, .dxf for entity import. "
-            "Use the appropriate code block tag (autocad / autolisp / dxf)."
+            ".lsp for parametric/formulaic geometry, .dxf for 2D entity import, "
+            "or FreeCAD Python for parametric 3D solids / .FCStd workflows. "
+            "Use the appropriate code block tag (autocad / autolisp / dxf / python)."
         ),
     }.get(req.format, "")
 
@@ -1187,9 +1197,10 @@ async def cad_endpoint(req: CadRequest, api_key: Optional[str] = Security(api_ke
         f"{req.prompt}\n\n"
         f"[Format instruction: {fmt_hint}]\n"
         "After the code block, include:\n"
-        "1. How to load/run this in AutoCAD (exact steps)\n"
+        "1. How to load/run this in the target CAD environment (exact steps)\n"
         "2. Key dimensions and assumptions made\n"
-        "3. Suggested layer names and colors"
+        "3. Suggested layer names / object organization\n"
+        "4. If using FreeCAD Python, explain what files should be exported (.FCStd / STEP / STL)"
     )
 
     try:
@@ -1200,13 +1211,22 @@ async def cad_endpoint(req: CadRequest, api_key: Optional[str] = Security(api_ke
             script_format = "lsp"
         elif "```dxf" in response_text.lower():
             script_format = "dxf"
+        elif "```python" in response_text.lower():
+            script_format = "freecad"
+
+        ext_map = {
+            "scr": "scr",
+            "lsp": "lsp",
+            "dxf": "dxf",
+            "freecad": "py",
+        }
 
         return {
             "response":      response_text,
             "model":         model_used,
             "domain":        "cad",
             "script_format": script_format,
-            "filename":      f"irving_cad_{script_format}.{script_format}",
+            "filename":      f"irving_cad_{script_format}.{ext_map.get(script_format, script_format)}",
         }
     except HTTPException:
         raise

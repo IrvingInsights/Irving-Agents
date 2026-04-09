@@ -768,6 +768,7 @@ if (storedServer) {
   localStorage.setItem('irving_server_url', storedServer);
 }
 const SERVER = storedServer || DEFAULT_SERVER;
+const FREECAD_BRIDGE = (localStorage.getItem('irving_freecad_bridge_url') || 'http://127.0.0.1:8765').replace(/\/$/, '');
 let selectedModel = 'auto';
 let isLoading = false;
 let attachedFiles = [];   // { name, type, content, dataUrl }
@@ -932,6 +933,78 @@ async function postJsonWithRetry(path, body, { attempts = 3, timeout = 120000, d
     }
   }
   throw lastErr || new Error('Request failed');
+}
+
+function detectCadMode(prompt) {
+  const pl = (prompt || '').toLowerCase();
+  if (!pl) return null;
+  if (/(freecad|fcstd|\.fcstd|\.step|\bstep file\b|\.stl|\bstl file\b|partdesign|part design|freecad macro|3d solid|parametric 3d|solid model)/.test(pl)) {
+    return { endpoint: '/cad', format: 'freecad', label: 'FreeCAD' };
+  }
+  if (/(autocad|autolisp|\.scr|\.lsp|\bdxf\b|\bdwg\b|cad script)/.test(pl)) {
+    return { endpoint: '/cad', format: 'auto', label: 'CAD' };
+  }
+  return null;
+}
+
+function extractCodeBlock(text, languages) {
+  const langs = languages.join('|');
+  const re = new RegExp('```(?:' + langs + ')\\s*\\n?([\\s\\S]*?)```', 'i');
+  const match = String(text || '').match(re);
+  return match ? match[1].trim() : '';
+}
+
+async function checkFreecadBridge() {
+  const res = await fetch(`${FREECAD_BRIDGE}/health`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) throw new Error(`Bridge HTTP ${res.status}`);
+  return res.json();
+}
+
+async function runFreecadMacroFromResponse(text, data, btnEl) {
+  const macroSource = extractCodeBlock(text, ['python']);
+  if (!macroSource) {
+    showToast('No FreeCAD macro found in this reply');
+    return;
+  }
+
+  const originalLabel = btnEl.textContent;
+  btnEl.disabled = true;
+  btnEl.textContent = 'Running...';
+
+  try {
+    await checkFreecadBridge();
+    const baseName = (data?.filename || `irving_freecad_${Date.now()}`).replace(/\.[^.]+$/, '');
+    const res = await fetch(`${FREECAD_BRIDGE}/freecad/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        macro_source: macroSource,
+        model_basename: baseName,
+        export_formats: ['fcstd', 'step'],
+        timeout_s: 240,
+      }),
+      signal: AbortSignal.timeout(250000),
+    });
+    let payload = {};
+    try { payload = await res.json(); } catch {}
+    if (!res.ok) {
+      throw new Error(payload.detail || payload.error || `HTTP ${res.status}`);
+    }
+    const artifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
+    if (artifacts.length === 0) {
+      showToast('FreeCAD finished, but no artifacts were returned');
+      return;
+    }
+    artifacts.forEach(artifact => window.open(artifact.url, '_blank', 'noopener'));
+    showToast(`FreeCAD created ${artifacts.map(a => a.name).join(', ')}`);
+  } catch (err) {
+    showToast(`FreeCAD bridge error: ${err.message}`);
+  } finally {
+    btnEl.disabled = false;
+    btnEl.textContent = originalLabel;
+  }
 }
 
 function buildOperationalPayload(prompt, response) {
@@ -1223,22 +1296,27 @@ async function sendMessage() {
   appendTyping(typingId);
 
   const orchestrate = document.getElementById('orchestrateToggle').checked;
+  const cadMode = detectCadMode(rawPrompt);
   const start = Date.now();
   let agentPanelId = null;
 
-  const body = {
+  const body = cadMode ? {
+    prompt,
+    model: selectedModel,
+    format: cadMode.format,
+  } : {
     prompt,
     model: selectedModel,
     store_to_drive: document.getElementById('driveToggle').checked,
   };
-  const endpoint = orchestrate ? '/orchestrate' : '/run';
-  const timeout  = orchestrate ? 180000 : 120000;
-  const retryTimeout = orchestrate ? 240000 : 180000;
+  const endpoint = cadMode ? cadMode.endpoint : (orchestrate ? '/orchestrate' : '/run');
+  const timeout  = cadMode ? 180000 : (orchestrate ? 180000 : 120000);
+  const retryTimeout = cadMode ? 240000 : (orchestrate ? 240000 : 180000);
 
   try {
 
     // Show live agent panel for orchestration mode
-    if (orchestrate) {
+    if (orchestrate && !cadMode) {
       agentPanelId = 'ap-' + Date.now();
       removeTyping(typingId);
       const panel = document.createElement('div');
@@ -1292,7 +1370,7 @@ async function sendMessage() {
       document.getElementById(agentPanelId)?.remove();
     }
 
-    if (!orchestrate) removeTyping(typingId);
+    if (!orchestrate || cadMode) removeTyping(typingId);
 
     const modelUsed = (d.model_used || d.model || selectedModel).toLowerCase()
       .replace('claude-opus-4-6','claude').replace('gpt-4o','gpt').replace('gemini-1.5-pro','gemini');
@@ -1301,6 +1379,10 @@ async function sendMessage() {
 
     if (d.orchestrated) {
       showToast(`⚡ ${d.agents?.length || 0} agents synthesized in ${elapsed}s`);
+    } else if (d.script_format === 'freecad') {
+      showToast('FreeCAD macro ready — use Run in FreeCAD to generate files locally');
+    } else if (d.script_format) {
+      showToast(`${d.script_format.toUpperCase()} CAD output ready`);
     } else if (d.domain && d.domain !== 'default') {
       showToast(`🎯 ${domainLabels[d.domain] || d.domain} expert activated`);
     }
@@ -1319,7 +1401,7 @@ async function sendMessage() {
     }
   } catch (err) {
     document.getElementById(agentPanelId)?.remove();
-    if (!orchestrate) removeTyping(typingId);
+    if (!orchestrate || cadMode) removeTyping(typingId);
 
     if (err.status === 401) {
       attachedFiles = filesSnapshot;
@@ -1451,6 +1533,13 @@ function appendMessage(role, text, modelKey, data, elapsed) {
     copyBtn.textContent = 'Copy';
     copyBtn.onclick = () => { navigator.clipboard.writeText(text); showToast('Copied'); };
     acts.appendChild(copyBtn);
+    if (data?.script_format === 'freecad') {
+      const freecadBtn = document.createElement('button');
+      freecadBtn.className = 'msg-act-btn';
+      freecadBtn.textContent = 'Run in FreeCAD';
+      freecadBtn.onclick = () => runFreecadMacroFromResponse(text, data, freecadBtn);
+      acts.appendChild(freecadBtn);
+    }
     div.appendChild(acts);
   }
 
@@ -1724,6 +1813,8 @@ async function loadContextPrompts() {
       `Act as an architectural design expert. Review this building idea for layout logic, circulation, envelope concept, and buildability. Tell me what is elegant, what is awkward, and what should be revised before moving into detailed drawing.`);
     html += makeQBtn('📐', 'Generate CAD drawing script',
       `Generate an AutoCAD script (.scr) for a PeakHinge A-frame: 24-foot span, 12/12 pitch, 32-foot length, 8-foot bays. Include floor plan, front elevation, and side elevation on separate AIA-style layers. Explain exactly how to run it in AutoCAD.`);
+    html += makeQBtn('🧱', 'Generate FreeCAD macro',
+      `Generate a FreeCAD macro for a parametric PeakHinge concept model. Create a simple buildable 3D massing model with named dimensions, return build_model(doc), and explain how to export FCStd and STEP.`);
 
     if (snaps.length === 0) {
       // Server awake but no snapshots yet
