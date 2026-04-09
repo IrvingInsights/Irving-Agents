@@ -366,6 +366,21 @@ def build_context_block(snapshots: list, drive_context: str = "") -> str:
 
 EXPERT_PERSONAS = {
 
+    "architecture": (
+        "You are a senior architect and building designer with deep experience in residential "
+        "design, unconventional housing, off-grid dwellings, and buildable concept development. "
+        "You help Daniel think through plan layout, spatial logic, envelope concepts, siting, "
+        "proportion, detailing priorities, and how architecture should connect cleanly to "
+        "structural systems and CAD production.\n\n"
+        "When answering:\n"
+        "- Lead with design intent, program, circulation, and buildability\n"
+        "- Distinguish clearly between concept design, schematic design, and construction-level detail\n"
+        "- Call out when a request should move into CAD drawings, sections, elevations, or parametric geometry\n"
+        "- Connect architectural ideas to structural, envelope, and permitting consequences\n"
+        "- Use concrete dimensions, adjacencies, and layout suggestions when relevant\n"
+        "- Be direct about what is elegant, awkward, overbuilt, or unresolved"
+    ),
+
     "structural": (
         "You are a multidisciplinary expert panel: a licensed structural engineer (PE) "
         "specializing in steel and timber connection design, and an architect with deep "
@@ -511,13 +526,28 @@ EXPERT_PERSONAS = {
 
 # Domain keyword detection — ordered by specificity
 _DOMAIN_SIGNALS = [
+    ("cad", [
+        "autocad", "autolisp", "cad drawing", "cad file", "dxf", "dwg",
+        "draw a ", "draw the ", "cad script", "lisp routine",
+        "drafting", "2d drawing", "technical drawing", "orthographic",
+        "hatching", "dimension line", "annotation", "viewports",
+        "layer management", "block insert", "xref", ".scr file", ".lsp file",
+        "peakhinge drawing", "a-frame drawing", "cad model",
+    ]),
+    ("architecture", [
+        "architecture", "architectural", "architect", "floor plan", "site plan",
+        "elevation", "section drawing", "facade", "façade", "layout",
+        "space planning", "room plan", "circulation", "program diagram",
+        "building massing", "massing", "envelope", "window layout",
+        "door layout", "design scheme", "schematic design",
+    ]),
     ("structural", [
         "peakhinge", "peak hinge", "hinge", "pintle", "a-frame", "aframe",
         "structural", "truss", "beam", "load path", "load calc", "foundation",
         "building", "house", "cabin", "dwelling", "earth-shelter", "prefab",
         "panel system", "connection", "weld", "bolt", "steel section", "timber",
-        "blueprint", "floor plan", "envelope", "roof line", "wall assembly",
-        "fabricat", "architect", "engineer", "ibc", "irc", "aisc",
+        "blueprint", "roof line", "wall assembly",
+        "fabricat", "engineer", "ibc", "irc", "aisc",
     ]),
     ("strategy", [
         "irving insights", "consulting", "client", "engagement", "strategy",
@@ -547,15 +577,6 @@ _DOMAIN_SIGNALS = [
         "running plan", "supplement", "biometric", "hrv", "vo2 max",
         "health goal", "fitness",
     ]),
-    ("cad", [
-        "autocad", "autolisp", "cad drawing", "cad file", "dxf", "dwg",
-        "draw a ", "draw the ", "floor plan", "site plan", "elevation drawing",
-        "section drawing", "detail drawing", "cad script", "lisp routine",
-        "drafting", "2d drawing", "technical drawing", "orthographic",
-        "hatching", "dimension line", "annotation", "viewports",
-        "layer management", "block insert", "xref", ".scr file", ".lsp file",
-        "peakhinge drawing", "a-frame drawing", "cad model",
-    ]),
     ("code", [
         "python code", "javascript", "react component", "fastapi", "endpoint",
         "function", "script", "bug fix", "error trace", "deploy", "render.com",
@@ -579,6 +600,7 @@ def domain_preferred_model(domain: str) -> str:
     return {
         "code":         "gpt",     # GPT-4o excels at code generation
         "cad":          "claude",  # Claude generates best-quality CAD scripts and AutoLISP
+        "architecture": "claude",
         "health":       "gemini",  # Gemini good at research / evidence synthesis
         "structural":   "claude",  # Claude for deep analytical reasoning
         "strategy":     "claude",
