@@ -82,6 +82,7 @@
     flex: 1;
     overflow: hidden;
     height: calc(100vh - 57px);
+    align-items: flex-start;
   }
 
   /* ── LEFT SIDEBAR ── */
@@ -91,10 +92,51 @@
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
+    position: sticky;
+    top: 57px;
+    height: calc(100vh - 57px);
+    align-self: flex-start;
   }
+  .sidebar::-webkit-scrollbar { width: 4px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-  .sidebar-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-section { border-bottom: 1px solid var(--border); }
+  .sidebar-section-header {
+    width: 100%;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .sidebar-section-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sidebar-section-meta {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+  .sidebar-chevron {
+    color: var(--muted);
+    font-size: 12px;
+    transition: transform 0.15s ease;
+  }
+  .sidebar-section.collapsed .sidebar-chevron { transform: rotate(-90deg); }
+  .sidebar-section-body { padding: 0 16px 16px; }
+  .sidebar-section.collapsed .sidebar-section-body { display: none; }
   .sidebar-label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 
   /* Model Selector */
@@ -166,7 +208,8 @@
     color: var(--muted); padding: 8px 2px 4px; opacity: 0.6; }
 
   /* History */
-  .history-list { overflow-y: auto; flex: 1; min-height: 120px; padding: 8px; }
+  .history-actions { display:flex; gap:6px; margin-bottom:10px; }
+  .history-list { overflow-y: auto; flex: 1; min-height: 120px; padding: 0; }
   .history-item {
     padding: 8px 10px; border-radius: 7px; cursor: pointer;
     font-size: 11px; color: var(--muted); line-height: 1.3;
@@ -567,8 +610,12 @@
   <aside class="sidebar">
 
     <!-- Model Selector -->
-    <div class="sidebar-section">
-      <div class="sidebar-label">Model</div>
+    <div class="sidebar-section" id="sidebarSection-model">
+      <button class="sidebar-section-header" onclick="toggleSidebarSection('model')">
+        <span class="sidebar-section-title">Model</span>
+        <span class="sidebar-chevron">▾</span>
+      </button>
+      <div class="sidebar-section-body">
       <div class="model-grid">
         <button class="model-btn active" data-model="auto" onclick="setModel('auto')">
           <span class="model-icon">⚡</span>Auto
@@ -583,11 +630,16 @@
           <span class="model-icon">🟣</span>Gemini
         </button>
       </div>
+      </div>
     </div>
 
     <!-- Options -->
-    <div class="sidebar-section">
-      <div class="sidebar-label">Options</div>
+    <div class="sidebar-section" id="sidebarSection-options">
+      <button class="sidebar-section-header" onclick="toggleSidebarSection('options')">
+        <span class="sidebar-section-title">Options</span>
+        <span class="sidebar-chevron">▾</span>
+      </button>
+      <div class="sidebar-section-body">
       <div class="toggle-row">
         <div>
           <div class="toggle-label">Save to Drive</div>
@@ -631,32 +683,40 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
+      </div>
     </div>
 
     <!-- Quick Prompts — generated from live Notion context -->
-    <div class="sidebar-section">
-      <div class="sidebar-label" style="display:flex;align-items:center;justify-content:space-between;">
-        <span>Quick Prompts</span>
-        <span id="qpStatus" style="font-size:9px;color:var(--muted);letter-spacing:1px;"></span>
-      </div>
+    <div class="sidebar-section" id="sidebarSection-prompts">
+      <button class="sidebar-section-header" onclick="toggleSidebarSection('prompts')">
+        <span class="sidebar-section-title">
+          <span>Quick Prompts</span>
+          <span id="qpStatus" class="sidebar-section-meta"></span>
+        </span>
+        <span class="sidebar-chevron">▾</span>
+      </button>
+      <div class="sidebar-section-body">
       <div class="quick-prompts" id="quickPromptsList">
         <div class="qloading">Loading context…</div>
+      </div>
       </div>
     </div>
 
     <!-- History -->
-    <div style="padding:10px 12px 6px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
-      <button onclick="toggleHistory()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:5px;padding:0;">
-        <span style="font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">History</span>
-        <span id="historyArrow" style="font-size:10px;color:var(--muted);">▾</span>
+    <div class="sidebar-section" id="sidebarSection-history">
+      <button class="sidebar-section-header" onclick="toggleSidebarSection('history')">
+        <span class="sidebar-section-title">History</span>
+        <span class="sidebar-chevron">▾</span>
       </button>
-      <div style="display:flex;gap:6px;">
+      <div class="sidebar-section-body">
+      <div class="history-actions">
         <button onclick="newChat()" style="background:rgba(0,212,255,.12);border:1px solid var(--cyan);border-radius:5px;padding:2px 8px;font-size:9px;color:var(--cyan);cursor:pointer;font-weight:700;">+ New</button>
         <button onclick="clearHistory()" title="Delete all conversations" style="background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:9px;color:var(--muted);cursor:pointer;">all x</button>
       </div>
-    </div>
-    <div class="history-list" id="historyList">
+      <div class="history-list" id="historyList">
       <div style="font-size:11px;color:var(--muted);padding:8px;text-align:center;">No history yet</div>
+      </div>
+      </div>
     </div>
 
   </aside>
@@ -783,6 +843,7 @@ const AUTO_SWEEP_KEY = 'irving_auto_sweep';
 const AUTO_SNAPSHOT_KEY = 'irving_auto_snapshot';
 const API_KEY_STORAGE = 'irving_api_key';
 const USER_KEY = 'irving_user_id';
+const SIDEBAR_SECTION_KEY_PREFIX = 'irving_sidebar_section_';
 const MAX_TURNS = 10;
 const CTX_CHARS = 8000;
 
@@ -1088,6 +1149,33 @@ function clearMemory() {
   conversationMemory = [];
   saveMemory();
   showToast('🧹 Conversation context cleared');
+}
+
+function setSidebarSectionState(sectionId, expanded) {
+  const section = document.getElementById(`sidebarSection-${sectionId}`);
+  if (!section) return;
+  section.classList.toggle('collapsed', !expanded);
+  try { localStorage.setItem(`${SIDEBAR_SECTION_KEY_PREFIX}${sectionId}`, expanded ? '1' : '0'); } catch {}
+}
+
+function toggleSidebarSection(sectionId) {
+  const section = document.getElementById(`sidebarSection-${sectionId}`);
+  if (!section) return;
+  setSidebarSectionState(sectionId, section.classList.contains('collapsed'));
+}
+
+function restoreSidebarSections() {
+  ['model', 'options', 'prompts', 'history'].forEach(sectionId => {
+    let stored = null;
+    try { stored = localStorage.getItem(`${SIDEBAR_SECTION_KEY_PREFIX}${sectionId}`); } catch {}
+    if (sectionId === 'history' && stored === null) {
+      try {
+        const legacy = localStorage.getItem('irving_hist_open');
+        if (legacy === '0') stored = '0';
+      } catch {}
+    }
+    setSidebarSectionState(sectionId, stored !== '0');
+  });
 }
 
 // ── FILE ATTACHMENT ──────────────────────────────────────
@@ -1648,15 +1736,6 @@ function _relTime(ts) {
   return Math.floor(d / 86400000) + 'd ago';
 }
 
-function toggleHistory() {
-  const list  = document.getElementById('historyList');
-  const arrow = document.getElementById('historyArrow');
-  const hidden = list.style.display === 'none';
-  list.style.display = hidden ? '' : 'none';
-  arrow.textContent  = hidden ? '?' : '?';
-  try { localStorage.setItem('irving_hist_open', hidden ? '1' : '0'); } catch {}
-}
-
 function clearHistory() {
   if (!confirm('Delete all saved conversations?')) return;
   conversations  = [];
@@ -1898,12 +1977,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderHistory();
   }
 
-  // Restore history collapse state
-  const histOpen = localStorage.getItem('irving_hist_open');
-  if (histOpen === '0') {
-    document.getElementById('historyList').style.display = 'none';
-    document.getElementById('historyArrow').textContent  = '▸';
-  }
+  restoreSidebarSections();
 
   // Show memory indicator if context exists
   if (conversationMemory.length > 0) {
