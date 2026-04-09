@@ -984,6 +984,7 @@ async function runFreecadMacroFromResponse(text, data, btnEl) {
         model_basename: baseName,
         export_formats: ['fcstd', 'step'],
         timeout_s: 240,
+        open_in_gui: true,
       }),
       signal: AbortSignal.timeout(250000),
     });
@@ -998,7 +999,9 @@ async function runFreecadMacroFromResponse(text, data, btnEl) {
       return;
     }
     artifacts.forEach(artifact => window.open(artifact.url, '_blank', 'noopener'));
-    showToast(`FreeCAD created ${artifacts.map(a => a.name).join(', ')}`);
+    showToast(payload.opened_in_gui
+      ? `FreeCAD opened ${artifacts[0].name} and created ${artifacts.map(a => a.name).join(', ')}`
+      : `FreeCAD created ${artifacts.map(a => a.name).join(', ')}`);
   } catch (err) {
     showToast(`FreeCAD bridge error: ${err.message}`);
   } finally {

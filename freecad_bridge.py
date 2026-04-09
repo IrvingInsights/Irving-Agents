@@ -33,6 +33,7 @@ class ExecuteFreeCADRequest(BaseModel):
     model_basename: str = Field(default="irving_freecad_model", min_length=1, max_length=120)
     export_formats: List[str] = Field(default_factory=lambda: ["fcstd", "step"])
     timeout_s: int = Field(default=180, ge=10, le=900)
+    open_in_gui: bool = True
 
 
 def _find_freecadcmd() -> Path:
@@ -50,6 +51,13 @@ def _safe_basename(name: str) -> str:
     return cleaned[:80] or "irving_freecad_model"
 
 
+def _find_freecad_gui(freecadcmd: Path) -> Optional[Path]:
+    sibling = freecadcmd.with_name("freecad.exe")
+    if sibling.exists():
+        return sibling
+    return None
+
+
 def _parse_runner_json(stdout: str) -> dict:
     lines = [line.strip() for line in stdout.splitlines() if line.strip()]
     for line in reversed(lines):
@@ -64,9 +72,11 @@ def _parse_runner_json(stdout: str) -> dict:
 @app.get("/health")
 def health():
     freecadcmd = _find_freecadcmd()
+    freecad_gui = _find_freecad_gui(freecadcmd)
     return {
         "status": "ok",
         "freecadcmd": str(freecadcmd),
+        "freecad_gui": str(freecad_gui) if freecad_gui else None,
         "runner": str(RUNNER_PATH),
     }
 
@@ -74,6 +84,7 @@ def health():
 @app.post("/freecad/execute")
 def execute_freecad(req: ExecuteFreeCADRequest):
     freecadcmd = _find_freecadcmd()
+    freecad_gui = _find_freecad_gui(freecadcmd)
     run_id = uuid.uuid4().hex
     run_dir = RUNS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -124,10 +135,18 @@ def execute_freecad(req: ExecuteFreeCADRequest):
                 "url": f"http://127.0.0.1:8765/artifacts/{run_id}/{artifact['name']}",
             })
 
+    gui_opened = False
+    fcstd_artifact = next((a for a in artifacts if a["type"] == "fcstd"), None)
+    if req.open_in_gui and freecad_gui and fcstd_artifact:
+        fcstd_path = run_dir / fcstd_artifact["name"]
+        subprocess.Popen([str(freecad_gui), str(fcstd_path)])
+        gui_opened = True
+
     return {
         "success": True,
         "run_id": run_id,
         "artifacts": artifacts,
+        "opened_in_gui": gui_opened,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
     }
