@@ -113,20 +113,17 @@ Expected:
 - `/health` shows `"history":"configured"`
 - `/history/state` returns a JSON payload rather than `404`
 
-## 8. Point the frontend at Cloud Run
+## 8. Frontend default
 
-If you keep serving `index.html` from GitHub Pages, open the app with:
+The tracked `index.html` now defaults GitHub Pages traffic to the Cloud Run backend:
 
 ```text
-https://irvinginsights.github.io/Irving-Agents/?server=https://YOUR_CLOUD_RUN_URL
+https://irving-mvp-m4j4uvbgea-uc.a.run.app
 ```
 
-The app stores that backend URL in local storage.
-
-If you later serve the frontend from the same Cloud Run service or another non-GitHub host, the app defaults to same-origin automatically.
+You can still override the backend with `?server=https://YOUR_BACKEND_URL` for testing. If you later serve the frontend from the same backend origin, the app defaults to same-origin automatically.
 
 ## 9. Recommended next hardening
 
-- Move API keys into Secret Manager instead of plaintext env vars.
 - Add a custom domain in front of Cloud Run.
 - If you want warm-ish behavior, use Cloud Scheduler or an external pinger like UptimeRobot against `/health`.
