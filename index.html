@@ -1059,13 +1059,14 @@ async function runFreecadMacroFromResponse(text, data, btnEl) {
       showToast('FreeCAD finished, but no artifacts were returned');
       return;
     }
+    const htmlSheet = artifacts.find(artifact => artifact.type === 'html');
     const browserArtifacts = payload.opened_in_gui
-      ? artifacts.filter(artifact => artifact.type === 'svg')
+      ? (htmlSheet ? [htmlSheet] : artifacts.filter(artifact => artifact.type === 'svg'))
       : artifacts;
     browserArtifacts.forEach(artifact => window.open(artifact.url, '_blank', 'noopener'));
     const drawingCount = artifacts.filter(a => a.type === 'svg').length;
     showToast(payload.opened_in_gui
-      ? `FreeCAD opened ${artifacts[0].name}; open DrawingSheet in the model tree for ${drawingCount} generated views`
+      ? `FreeCAD opened ${artifacts[0].name}; drawing sheet opened in browser with ${drawingCount} generated views`
       : `FreeCAD created ${artifacts.map(a => a.name).join(', ')}`);
   } catch (err) {
     showToast(`FreeCAD bridge error: ${err.message}`);

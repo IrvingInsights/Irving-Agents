@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import FreeCAD as App
@@ -9,6 +10,7 @@ import Import
 import Mesh
 import Part
 import TechDraw
+from PySide import QtCore
 
 
 def _load_module(module_path: str):
@@ -145,8 +147,41 @@ def _create_techdraw_page(doc, objects):
         "scale": scale,
     }
 
+
+def _wait_for_techdraw_views(views, timeout_s=12.0):
+    app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
+    deadline = time.monotonic() + timeout_s
+    last_counts = {}
+
+    while time.monotonic() < deadline:
+        QtCore.QCoreApplication.processEvents()
+        QtCore.QThread.msleep(200)
+        QtCore.QCoreApplication.processEvents()
+
+        counts = {}
+        all_ready = True
+        any_edges = False
+        for name, view in views.items():
+            try:
+                visible_edges = len(view.getVisibleEdges())
+            except Exception:
+                visible_edges = 0
+            counts[name] = visible_edges
+            any_edges = any_edges or visible_edges > 0
+            all_ready = all_ready and visible_edges > 0
+
+        last_counts = counts
+        if all_ready:
+            return counts
+
+        if any_edges and time.monotonic() + 0.75 >= deadline:
+            break
+
+    return last_counts
+
 def _export_objects(objects, output_dir: Path, model_basename: str, export_formats, drawing_bundle):
     artifacts = []
+    svg_artifacts = []
 
     fcstd_path = output_dir / f"{model_basename}.FCStd"
     App.ActiveDocument.saveAs(str(fcstd_path))
@@ -180,7 +215,139 @@ def _export_objects(objects, output_dir: Path, model_basename: str, export_forma
             )
             svg_path = output_dir / f"{model_basename}_{name}.svg"
             svg_path.write_text(svg_doc, encoding="utf-8")
-            artifacts.append({"name": svg_path.name, "path": str(svg_path), "type": "svg"})
+            artifact = {"name": svg_path.name, "path": str(svg_path), "type": "svg"}
+            artifacts.append(artifact)
+            svg_artifacts.append(artifact)
+
+        html_path = output_dir / f"{model_basename}_sheet.html"
+        html_doc = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{model_basename} Drawing Sheet</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --ink: #111;
+      --muted: #666;
+      --line: #d6d6d6;
+      --paper: #f7f6f2;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: #d9d6cf;
+      padding: 24px;
+    }}
+    .sheet {{
+      max-width: 1400px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid #bfb9aa;
+      box-shadow: 0 18px 60px rgba(0,0,0,.18);
+      padding: 28px 28px 18px;
+    }}
+    .titlebar {{
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+      gap: 20px;
+    }}
+    .title {{
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }}
+    .subtitle {{
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: 1.2fr 0.9fr;
+      gap: 18px;
+    }}
+    .stack {{
+      display: grid;
+      gap: 18px;
+    }}
+    figure {{
+      margin: 0;
+      border: 1px solid var(--line);
+      background: white;
+      min-height: 240px;
+      display: flex;
+      flex-direction: column;
+    }}
+    figcaption {{
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 10px 12px 0;
+    }}
+    img {{
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      padding: 10px 12px 14px;
+    }}
+    .footnote {{
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+    }}
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="titlebar">
+      <div>
+        <div class="title">{model_basename.replace('_', ' ')}</div>
+        <div class="subtitle">FreeCAD-generated reference drawing sheet</div>
+      </div>
+      <div class="subtitle">Top / Front / Right / Iso</div>
+    </div>
+    <div class="grid">
+      <div class="stack">
+        <figure>
+          <figcaption>Top</figcaption>
+          <img src="{model_basename}_top.svg" alt="Top view">
+        </figure>
+        <figure>
+          <figcaption>Front</figcaption>
+          <img src="{model_basename}_front.svg" alt="Front view">
+        </figure>
+      </div>
+      <div class="stack">
+        <figure>
+          <figcaption>Right</figcaption>
+          <img src="{model_basename}_right.svg" alt="Right view">
+        </figure>
+        <figure>
+          <figcaption>Iso</figcaption>
+          <img src="{model_basename}_iso.svg" alt="Isometric view">
+        </figure>
+      </div>
+    </div>
+    <div class="footnote">FreeCAD opens the model document. This sheet is the assembled 2D reference output for the same run.</div>
+  </div>
+</body>
+</html>
+"""
+        html_path.write_text(html_doc, encoding="utf-8")
+        artifacts.append({"name": html_path.name, "path": str(html_path), "type": "html"})
 
     return artifacts
 
@@ -215,6 +382,10 @@ def main():
         raise RuntimeError("No FreeCAD objects were created for export")
     _ensure_objects_visible(objects)
     drawing_bundle = _create_techdraw_page(doc, objects)
+    doc.recompute()
+    edge_counts = _wait_for_techdraw_views(drawing_bundle["views"])
+    if not any(count > 0 for count in edge_counts.values()):
+        raise RuntimeError(f"TechDraw views did not finish rendering before export: {edge_counts}")
     doc.recompute()
 
     artifacts = _export_objects(objects, output_dir, model_basename, export_formats, drawing_bundle)
