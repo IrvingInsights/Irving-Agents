@@ -22,6 +22,7 @@ $env:FREECADCMD_PATH = 'C:\Path\To\freecadcmd.exe'
 - runs it through `freecadcmd.exe`
 - saves `.FCStd`
 - exports `.step` by default
+- exports orthographic `.svg` drawing views
 - can also export `.stl`
 
 ## Browser integration

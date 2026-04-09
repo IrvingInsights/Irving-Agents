@@ -94,7 +94,7 @@ def execute_freecad(req: ExecuteFreeCADRequest):
     macro_path.write_text(req.macro_source, encoding="utf-8")
 
     export_formats = sorted({fmt.lower() for fmt in req.export_formats} | {"fcstd"})
-    allowed_formats = {"fcstd", "step", "stl"}
+    allowed_formats = {"fcstd", "step", "stl", "svg"}
     if any(fmt not in allowed_formats for fmt in export_formats):
         raise HTTPException(status_code=400, detail=f"Supported export formats: {sorted(allowed_formats)}")
 

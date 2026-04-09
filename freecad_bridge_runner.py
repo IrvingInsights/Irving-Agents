@@ -7,6 +7,8 @@ from pathlib import Path
 import FreeCAD as App
 import Import
 import Mesh
+import Part
+import TechDraw
 
 
 def _load_module(module_path: str):
@@ -28,6 +30,13 @@ def _normalize_objects(result, doc):
     raise RuntimeError("build_model(doc) must return a FreeCAD object, a list of objects, or None")
 
 
+def _ensure_objects_visible(objects):
+    for obj in objects:
+        view_obj = getattr(obj, "ViewObject", None)
+        if view_obj and hasattr(view_obj, "Visibility"):
+            view_obj.Visibility = True
+
+
 def _export_objects(objects, output_dir: Path, model_basename: str, export_formats):
     artifacts = []
 
@@ -44,6 +53,23 @@ def _export_objects(objects, output_dir: Path, model_basename: str, export_forma
         stl_path = output_dir / f"{model_basename}.stl"
         Mesh.export(objects, str(stl_path))
         artifacts.append({"name": stl_path.name, "path": str(stl_path), "type": "stl"})
+
+    if "svg" in export_formats:
+        compound = Part.makeCompound([obj.Shape for obj in objects if hasattr(obj, "Shape")])
+        views = [
+            ("top", App.Vector(0, 0, 1)),
+            ("front", App.Vector(0, -1, 0)),
+            ("right", App.Vector(1, 0, 0)),
+        ]
+        for name, direction in views:
+            svg_group = TechDraw.projectToSVG(compound, direction)
+            svg_doc = (
+                '<svg xmlns="http://www.w3.org/2000/svg" version="1.1">'
+                f"{svg_group}</svg>"
+            )
+            svg_path = output_dir / f"{model_basename}_{name}.svg"
+            svg_path.write_text(svg_doc, encoding="utf-8")
+            artifacts.append({"name": svg_path.name, "path": str(svg_path), "type": "svg"})
 
     return artifacts
 
@@ -76,6 +102,7 @@ def main():
     objects = _normalize_objects(result, doc)
     if not objects:
         raise RuntimeError("No FreeCAD objects were created for export")
+    _ensure_objects_visible(objects)
 
     artifacts = _export_objects(objects, output_dir, model_basename, export_formats)
     print(json.dumps({"success": True, "artifacts": artifacts}))

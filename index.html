@@ -982,7 +982,7 @@ async function runFreecadMacroFromResponse(text, data, btnEl) {
       body: JSON.stringify({
         macro_source: macroSource,
         model_basename: baseName,
-        export_formats: ['fcstd', 'step'],
+        export_formats: ['fcstd', 'step', 'svg'],
         timeout_s: 240,
         open_in_gui: true,
       }),
@@ -998,9 +998,12 @@ async function runFreecadMacroFromResponse(text, data, btnEl) {
       showToast('FreeCAD finished, but no artifacts were returned');
       return;
     }
-    artifacts.forEach(artifact => window.open(artifact.url, '_blank', 'noopener'));
+    const browserArtifacts = payload.opened_in_gui
+      ? artifacts.filter(artifact => artifact.type === 'svg')
+      : artifacts;
+    browserArtifacts.forEach(artifact => window.open(artifact.url, '_blank', 'noopener'));
     showToast(payload.opened_in_gui
-      ? `FreeCAD opened ${artifacts[0].name} and created ${artifacts.map(a => a.name).join(', ')}`
+      ? `FreeCAD opened ${artifacts[0].name} and generated ${artifacts.filter(a => a.type === 'svg').length} drawing view(s)`
       : `FreeCAD created ${artifacts.map(a => a.name).join(', ')}`);
   } catch (err) {
     showToast(`FreeCAD bridge error: ${err.message}`);
