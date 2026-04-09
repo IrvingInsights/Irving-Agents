@@ -37,7 +37,115 @@ def _ensure_objects_visible(objects):
             view_obj.Visibility = True
 
 
-def _export_objects(objects, output_dir: Path, model_basename: str, export_formats):
+def _find_techdraw_template() -> Path:
+    resource_dir = Path(App.getResourceDir())
+    candidates = [
+        resource_dir / "Mod" / "TechDraw" / "Templates" / "A3_Landscape_blank.svg",
+        resource_dir / "Mod" / "TechDraw" / "Templates" / "A4_Landscape_blank.svg",
+        resource_dir / "Mod" / "TechDraw" / "Templates" / "A4_Landscape_TD.svg",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise RuntimeError("Could not find a TechDraw SVG template")
+
+
+def _bbox_size(objects):
+    shapes = [obj.Shape for obj in objects if hasattr(obj, "Shape") and not obj.Shape.isNull()]
+    if not shapes:
+        raise RuntimeError("No exportable shapes were created for TechDraw output")
+    compound = Part.makeCompound(shapes)
+    return compound.BoundBox, compound
+
+
+def _fit_scale(page_width, page_height, bbox):
+    usable_width = max(page_width - 80.0, 50.0)
+    usable_height = max(page_height - 60.0, 50.0)
+
+    x_len = max(float(bbox.XLength), 1.0)
+    y_len = max(float(bbox.YLength), 1.0)
+    z_len = max(float(bbox.ZLength), 1.0)
+
+    top_width = x_len
+    top_height = y_len
+    front_width = x_len
+    front_height = z_len
+    right_width = y_len
+    right_height = z_len
+
+    two_column_width = top_width + right_width + 30.0
+    two_row_height = top_height + front_height + 30.0
+
+    return max(min(usable_width / max(two_column_width, 1.0), usable_height / max(two_row_height, 1.0)), 0.02)
+
+
+def _make_draw_view(doc, page, label, source, direction, x_dir, x_pos, y_pos, scale):
+    view = doc.addObject("TechDraw::DrawViewPart", label)
+    page.addView(view)
+    view.Source = source
+    view.Direction = direction
+    view.XDirection = x_dir
+    view.Scale = scale
+    view.X = x_pos
+    view.Y = y_pos
+    view.Caption = label
+    return view
+
+
+def _create_techdraw_page(doc, objects):
+    bbox, compound = _bbox_size(objects)
+    template_path = _find_techdraw_template()
+
+    page = doc.addObject("TechDraw::DrawPage", "DrawingSheet")
+    template = doc.addObject("TechDraw::DrawSVGTemplate", "DrawingTemplate")
+    template.Template = str(template_path)
+    page.Template = template
+    doc.recompute()
+
+    page_width = float(page.PageWidth)
+    page_height = float(page.PageHeight)
+    scale = _fit_scale(page_width, page_height, bbox)
+
+    center_x = page_width * 0.36
+    center_y = page_height * 0.44
+    spacing_x = 30.0 + max(bbox.YLength * scale * 0.5, 22.0)
+    spacing_y = 30.0 + max(bbox.YLength * scale * 0.5, 22.0)
+
+    source = list(objects)
+    views = {
+        "Top": _make_draw_view(
+            doc, page, "Top", source, App.Vector(0, 0, 1), App.Vector(1, 0, 0),
+            center_x, center_y + spacing_y, scale,
+        ),
+        "Front": _make_draw_view(
+            doc, page, "Front", source, App.Vector(0, -1, 0), App.Vector(1, 0, 0),
+            center_x, center_y, scale,
+        ),
+        "Right": _make_draw_view(
+            doc, page, "Right", source, App.Vector(1, 0, 0), App.Vector(0, 0, 1),
+            center_x + spacing_x, center_y, scale,
+        ),
+        "Iso": _make_draw_view(
+            doc, page, "Iso", source, App.Vector(1, -1, 1), App.Vector(1, 1, 0),
+            page_width * 0.77, page_height * 0.70, scale * 0.85,
+        ),
+    }
+
+    for view in views.values():
+        view.CoarseView = False
+        view.HardHidden = False
+
+    doc.recompute()
+
+    return {
+        "page": page,
+        "template": template,
+        "compound": compound,
+        "views": views,
+        "scale": scale,
+    }
+
+def _export_objects(objects, output_dir: Path, model_basename: str, export_formats, drawing_bundle):
     artifacts = []
 
     fcstd_path = output_dir / f"{model_basename}.FCStd"
@@ -55,16 +163,19 @@ def _export_objects(objects, output_dir: Path, model_basename: str, export_forma
         artifacts.append({"name": stl_path.name, "path": str(stl_path), "type": "stl"})
 
     if "svg" in export_formats:
-        compound = Part.makeCompound([obj.Shape for obj in objects if hasattr(obj, "Shape")])
-        views = [
-            ("top", App.Vector(0, 0, 1)),
-            ("front", App.Vector(0, -1, 0)),
-            ("right", App.Vector(1, 0, 0)),
-        ]
-        for name, direction in views:
-            svg_group = TechDraw.projectToSVG(compound, direction)
+        directions = {
+            "top": App.Vector(0, 0, 1),
+            "front": App.Vector(0, -1, 0),
+            "right": App.Vector(1, 0, 0),
+            "iso": App.Vector(1, -1, 1),
+        }
+        for name, direction in directions.items():
+            svg_group = TechDraw.projectToSVG(drawing_bundle["compound"], direction)
             svg_doc = (
-                '<svg xmlns="http://www.w3.org/2000/svg" version="1.1">'
+                f'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" '
+                f'width="{drawing_bundle["page"].PageWidth}mm" '
+                f'height="{drawing_bundle["page"].PageHeight}mm" '
+                f'viewBox="0 0 {drawing_bundle["page"].PageWidth} {drawing_bundle["page"].PageHeight}">'
                 f"{svg_group}</svg>"
             )
             svg_path = output_dir / f"{model_basename}_{name}.svg"
@@ -103,8 +214,10 @@ def main():
     if not objects:
         raise RuntimeError("No FreeCAD objects were created for export")
     _ensure_objects_visible(objects)
+    drawing_bundle = _create_techdraw_page(doc, objects)
+    doc.recompute()
 
-    artifacts = _export_objects(objects, output_dir, model_basename, export_formats)
+    artifacts = _export_objects(objects, output_dir, model_basename, export_formats, drawing_bundle)
     print(json.dumps({"success": True, "artifacts": artifacts}))
 
 
