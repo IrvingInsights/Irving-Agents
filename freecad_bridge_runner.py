@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -179,6 +180,25 @@ def _wait_for_techdraw_views(views, timeout_s=12.0):
 
     return last_counts
 
+
+def _svg_viewbox_from_group(svg_group: str, padding: float = 8.0):
+    path_data = re.findall(r'd\s*=\s*"([^"]+)"', svg_group)
+    coords = []
+    for d_attr in path_data:
+        numbers = [float(value) for value in re.findall(r'[-+]?\d*\.?\d+(?:e[-+]?\d+)?', d_attr, flags=re.IGNORECASE)]
+        coords.extend((numbers[i], numbers[i + 1]) for i in range(0, len(numbers) - 1, 2))
+
+    if not coords:
+        return (-10.0, -10.0, 20.0, 20.0)
+
+    xs = [x for x, _ in coords]
+    ys = [y for _, y in coords]
+    min_x = min(xs) - padding
+    min_y = min(ys) - padding
+    width = max(max(xs) - min(xs) + padding * 2, 20.0)
+    height = max(max(ys) - min(ys) + padding * 2, 20.0)
+    return (min_x, min_y, width, height)
+
 def _export_objects(objects, output_dir: Path, model_basename: str, export_formats, drawing_bundle):
     artifacts = []
     svg_artifacts = []
@@ -206,11 +226,12 @@ def _export_objects(objects, output_dir: Path, model_basename: str, export_forma
         }
         for name, direction in directions.items():
             svg_group = TechDraw.projectToSVG(drawing_bundle["compound"], direction)
+            min_x, min_y, width, height = _svg_viewbox_from_group(svg_group)
             svg_doc = (
                 f'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" '
-                f'width="{drawing_bundle["page"].PageWidth}mm" '
-                f'height="{drawing_bundle["page"].PageHeight}mm" '
-                f'viewBox="0 0 {drawing_bundle["page"].PageWidth} {drawing_bundle["page"].PageHeight}">'
+                f'width="{width}" '
+                f'height="{height}" '
+                f'viewBox="{min_x} {min_y} {width} {height}">'
                 f"{svg_group}</svg>"
             )
             svg_path = output_dir / f"{model_basename}_{name}.svg"
