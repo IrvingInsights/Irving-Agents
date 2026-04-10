@@ -1899,9 +1899,9 @@ async function loadContextPrompts() {
     html += makeQBtn('🏠', 'Architectural concept review',
       `Act as an architectural design expert. Review this building idea for layout logic, circulation, envelope concept, and buildability. Tell me what is elegant, what is awkward, and what should be revised before moving into detailed drawing.`);
     html += makeQBtn('📐', 'Generate CAD drawing script',
-      `Generate an AutoCAD script (.scr) for a PeakHinge A-frame: 24-foot span, 12/12 pitch, 32-foot length, 8-foot bays. Include floor plan, front elevation, and side elevation on separate AIA-style layers. Explain exactly how to run it in AutoCAD.`);
+      `Using my current PeakHinge project context as ground truth, generate an AutoCAD script (.scr) for the actual PeakHinge tri-fold system. Include a legible floor plan, front elevation, and side elevation with meaningful hinge, cassette, and ridge geometry on separate AIA-style layers. Do not fall back to a generic A-frame sketch. Explain exactly how to run it in AutoCAD.`);
     html += makeQBtn('🧱', 'Generate FreeCAD macro',
-      `Generate a FreeCAD macro for a parametric PeakHinge concept model. Create a simple buildable 3D massing model with named dimensions, return build_model(doc), and explain how to export FCStd and STEP.`);
+      `Using my current PeakHinge project context as ground truth, generate a FreeCAD macro for the actual PeakHinge tri-fold system. Model the paired rafter panels, knee walls, plinth cassette, ridge pipe axis, and loft-related geometry for the locked PH-144 dimensions. Do not return a generic massing model or placeholder boxes. Return build_model(doc) and explain FCStd and STEP export.`);
 
     if (snaps.length === 0) {
       // Server awake but no snapshots yet

@@ -33,6 +33,27 @@ INDEX_HTML_PATH = os.path.join(APP_DIR, "index.html")
 # ── Config ────────────────────────────────────────────────────────────────────
 DEFAULT_CONTEXT_SNAPSHOTS_DB_ID = "57887d95-300e-4f9d-802c-1283b4132e02"
 NOTION_ID_RE = re.compile(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+PEAKHINGE_KEYWORDS = (
+    "peakhinge", "peak hinge", "tri-fold", "trifold", "a-frame", "aframe",
+    "pintle", "knee wall", "ridge pipe", "plinth cassette", "loft joist",
+)
+PEAKHINGE_REFERENCE_CONTEXT = """--- AUTHORITATIVE PEAKHINGE REFERENCE CONTEXT (Notion) ---
+Ground truth sources:
+- Design Documentation — v1 · March 2026 (32541623-f9ca-8142-80c9-c42f65ab2ced)
+- Technical Specification — PeakHinge Tri-fold System · v1 March 2026 (32641623-f9ca-8179-8248-fc8b7e01f167)
+- Cowork Session Brief — PeakHinge Designs · Active (33441623-f9ca-814f-b554-fdd6ae57a247)
+
+Locked system facts:
+- The hinge mechanism is a pintle design, not a piano hinge or barrel hinge.
+- Every hinge line uses the same 2" Schedule 40 galvanized steel pipe with proud UHMW-PE sleeves as the bearing surface and thermal break.
+- PeakHinge 144 locked geometry: 10'-0" cabin width, 14'-4 13/16" cabin length, 60 degree pitch, 3'-0" knee walls, 2x6 SPF ribs, 6 ribs at 24" OC, 10'-0" rafter length, ridge about 11'-8" above floor, loft at 7'-0" AFF with about 5'-4" clear width.
+- Ridge hinge geometry: rafters extend past the pipe and cross like scissors, with the ridge pipe about 12" below the rafter tips. A horizontal lock beam drops into notches at the top faces.
+- The plinth cassette is one rigid 10' x 10' floor panel with no center fold.
+- Knee wall base hinge (cassette hinge) uses a 4x4 compression post, steel bearing plate, cotter pin / bolt secondary lock, and full-width EPDM sill gasket.
+- Assembly intent: rafter panels, knee walls, ridge pipe axis, loft joists, and plinth cassette should all read clearly in plan, front, side, and isometric outputs.
+
+Use this reference context as ground truth over generic A-frame assumptions or stale drive notes. Do not simplify PeakHinge into placeholder boxes or a generic rib array unless the user explicitly asks for a massing study only.
+---"""
 
 
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -334,7 +355,26 @@ def get_current_snapshots(limit: int = 3) -> list:
         logger.error(f"Error fetching snapshots via REST: {e}")
         return []
 
-def build_context_block(snapshots: list, drive_context: str = "") -> str:
+
+def _is_peakhinge_prompt(prompt: str = "", snapshots: Optional[list] = None) -> bool:
+    prompt_l = (prompt or "").lower()
+    if any(token in prompt_l for token in PEAKHINGE_KEYWORDS):
+        return True
+    for snapshot in snapshots or []:
+        combined = " ".join(str(snapshot.get(key, "")) for key in ("name", "current_state", "recent_decisions"))
+        combined_l = combined.lower()
+        if any(token in combined_l for token in PEAKHINGE_KEYWORDS):
+            return True
+    return False
+
+
+def get_project_reference_context(prompt: str = "", snapshots: Optional[list] = None) -> str:
+    if _is_peakhinge_prompt(prompt, snapshots):
+        return PEAKHINGE_REFERENCE_CONTEXT
+    return ""
+
+
+def build_context_block(snapshots: list, drive_context: str = "", prompt: str = "") -> str:
     lines = []
     if snapshots:
         lines.append("--- CURRENT PROJECT CONTEXT (Notion Snapshots) ---\n")
@@ -352,6 +392,9 @@ def build_context_block(snapshots: list, drive_context: str = "") -> str:
                     lines.append(f"  {label}: {s[key]}")
             lines.append("")
         lines.append("---\n")
+    reference_context = get_project_reference_context(prompt, snapshots)
+    if reference_context:
+        lines.append(reference_context)
     if drive_context:
         lines.append(drive_context)
     return "\n".join(lines)
@@ -624,6 +667,23 @@ def build_expert_system(prompt: str, context_block: str = "") -> tuple:
     system  = persona
     if context_block:
         system += f"\n\n{context_block}"
+    if _is_peakhinge_prompt(prompt):
+        if domain == "cad":
+            system += (
+                "\n\nPROJECT-SPECIFIC CAD DIRECTIVES:\n"
+                "- Treat the authoritative PeakHinge reference context in this system prompt as ground truth.\n"
+                "- Never regress to piano-hinge language or generic A-frame assumptions.\n"
+                "- For FreeCAD output, build the actual tri-fold assembly components with meaningful object names, not placeholder boxes.\n"
+                "- Unless the user explicitly requests a massing study, include the ridge pipe axis, paired rafter panels, knee walls, plinth cassette, and loft-related geometry.\n"
+                "- Make the resulting model legible in top, front, right, and isometric drawing views.\n"
+            )
+        elif domain in {"architecture", "structural"}:
+            system += (
+                "\n\nPROJECT-SPECIFIC PEAKHINGE DIRECTIVES:\n"
+                "- Use the locked PeakHinge geometry and hinge facts in the system prompt as authoritative.\n"
+                "- Distinguish clearly between locked facts and open engineering items.\n"
+                "- Do not present unresolved engineering items as settled.\n"
+            )
     return system, domain
 
 
@@ -1087,8 +1147,8 @@ async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security
     """
     verify_api_key(api_key)
     snapshots = get_current_snapshots()
-    drive_context = get_drive_context()
-    context_block = build_context_block(snapshots, drive_context)
+    drive_context = get_drive_context(req.prompt)
+    context_block = build_context_block(snapshots, drive_context, req.prompt)
 
     # ?? Step 1: Decompose ????????????????????????????????????????????????????
     decomp = _decompose_prompt(req.prompt)
@@ -1188,14 +1248,25 @@ async def cad_endpoint(req: CadRequest, api_key: Optional[str] = Security(api_ke
         ),
     }.get(req.format, "")
 
-    context_block = build_context_block(get_current_snapshots(), get_drive_context())
+    snapshots = get_current_snapshots()
+    drive_context = get_drive_context(req.prompt)
+    context_block = build_context_block(snapshots, drive_context, req.prompt)
     system = EXPERT_PERSONAS["cad"]
     if context_block:
         system += f"\n\n{context_block}"
+    if _is_peakhinge_prompt(req.prompt, snapshots):
+        system += (
+            "\n\nPROJECT-SPECIFIC CAD DIRECTIVES:\n"
+            "- Use the authoritative PeakHinge context above as ground truth.\n"
+            "- For FreeCAD Python, generate the actual PeakHinge tri-fold assembly, not a generic massing model.\n"
+            "- Name major objects clearly: LeftRafterPanel, RightRafterPanel, LeftKneeWall, RightKneeWall, PlinthCassette, RidgePipe, LoftJoists, and lock members when modeled.\n"
+            "- Keep geometry suitable for plan, front, side, and isometric drawing generation.\n"
+        )
 
     augmented_prompt = (
         f"{req.prompt}\n\n"
         f"[Format instruction: {fmt_hint}]\n"
+        "If this is a PeakHinge request, use the locked PeakHinge dimensions and hinge facts from the system prompt rather than inventing a generic A-frame.\n"
         "After the code block, include:\n"
         "1. How to load/run this in the target CAD environment (exact steps)\n"
         "2. Key dimensions and assumptions made\n"
@@ -1238,11 +1309,12 @@ async def get_context(api_key: Optional[str] = Security(api_key_header)):
     verify_api_key(api_key)
     snapshots     = get_current_snapshots()
     drive_context = get_drive_context()
-    context_block = build_context_block(snapshots, drive_context)
+    context_block = build_context_block(snapshots, drive_context, "")
     return {
         "snapshots":      snapshots,
         "snapshot_count": len(snapshots),
         "drive_context":  bool(drive_context),
+        "reference_context": bool(get_project_reference_context("", snapshots)),
         "context_block":  context_block,
     }
 
@@ -1254,7 +1326,7 @@ async def run(request: RunRequest, api_key: Optional[str] = Security(api_key_hea
     # 1. Build context from Notion + Drive
     snapshots     = get_current_snapshots()
     drive_context = get_drive_context(query=request.prompt[:100])
-    context_block = build_context_block(snapshots, drive_context)
+    context_block = build_context_block(snapshots, drive_context, request.prompt)
 
     # 2. Expert domain routing — picks persona + preferred model
     system, domain = build_expert_system(request.prompt, context_block)
