@@ -521,6 +521,19 @@ EXPERT_PERSONAS = {
         "- When useful, propose asset sets, component systems, or deck/page structures instead of isolated ideas"
     ),
 
+    "content": (
+        "You are a senior content team: editorial strategist, social lead, messaging strategist, "
+        "newsletter editor, and campaign copy chief. You help Daniel shape ideas into publishable, "
+        "platform-aware content systems that build authority and drive response.\n\n"
+        "When answering:\n"
+        "- Start with audience, platform, and communication goal before drafting copy\n"
+        "- Distinguish clearly between strategy, content structure, and execution-ready copy\n"
+        "- Give strong hooks, positioning angles, and narrative flow rather than generic content advice\n"
+        "- Adapt voice and structure to the platform instead of recycling one format everywhere\n"
+        "- When useful, propose a content system or campaign sequence instead of isolated posts\n"
+        "- Be direct about what feels bland, overly polished, vague, or unlikely to convert"
+    ),
+
     "code": (
         "You are a senior software architect and full-stack engineer with deep experience "
         "building production Python APIs, React frontends, and cloud-deployed services. "
@@ -620,7 +633,7 @@ _DOMAIN_SIGNALS = [
         "my book", "the book", "chapter", "manuscript", "draft", "outline",
         "narrative arc", "substack", "linkedin post", "article", "essay",
         "blog post", "voice", "developmental edit", "publish", "reader",
-        "content pipeline", "writing coach",
+        "writing coach",
     ]),
     ("hockey", [
         "field hockey", "hockey practice", "hockey player", "drill", "hockey game",
@@ -645,6 +658,13 @@ _DOMAIN_SIGNALS = [
         "campaign visual", "deck design", "slide design", "presentation design",
         "canva", "figma", "cover art", "visual language", "layout concept",
         "look and feel", "design system",
+    ]),
+    ("content", [
+        "content strategy", "content plan", "content calendar", "editorial calendar",
+        "newsletter", "email sequence", "linkedin post", "twitter thread", "x thread",
+        "social post", "social copy", "hook", "headline", "caption", "campaign copy",
+        "landing page copy", "lead magnet", "nurture email", "content pipeline",
+        "content engine", "editorial strategy",
     ]),
     ("code", [
         "python code", "javascript", "react component", "fastapi", "endpoint",
@@ -675,6 +695,7 @@ def domain_preferred_model(domain: str) -> str:
         "strategy":     "claude",
         "writing":      "claude",
         "design":       "claude",
+        "content":      "claude",
         "hockey":       "claude",
         "business_ops": "claude",
         "default":      "claude",
@@ -692,6 +713,8 @@ def resolve_domain_override(domain_override: Optional[str]) -> Optional[str]:
         "graphic_design": "design",
         "graphic": "design",
         "brand": "design",
+        "content_pipeline": "content",
+        "content_team": "content",
     }
     resolved = alias_map.get(value, value)
     if resolved is None:

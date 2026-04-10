@@ -709,13 +709,13 @@
             <div class="studio-desc">Brand systems, campaign visuals, deck direction, layouts, and creative reviews.</div>
             <span class="studio-pill">Studio</span>
           </button>
-          <button class="studio-card launch" id="studioCard-content" onclick="openContentPipelineApp()">
+          <button class="studio-card" id="studioCard-content" onclick="selectSubApp('content')">
             <div class="studio-head">
-              <span class="studio-name">Content Pipeline</span>
-              <span class="studio-icon">↗</span>
+              <span class="studio-name">Content Team</span>
+              <span class="studio-icon">✎</span>
             </div>
-            <div class="studio-desc">Launch the separate CMS pipeline app for idea-to-post workflow and prompt generation.</div>
-            <span class="studio-pill">External App</span>
+            <div class="studio-desc">Idea shaping, hooks, posts, campaigns, newsletters, and platform-specific content systems.</div>
+            <span class="studio-pill">Studio</span>
           </button>
         </div>
       </div>
@@ -941,7 +941,6 @@ if (storedServer) {
 }
 const SERVER = storedServer || DEFAULT_SERVER;
 const FREECAD_BRIDGE = (localStorage.getItem('irving_freecad_bridge_url') || 'http://127.0.0.1:8765').replace(/\/$/, '');
-const DEFAULT_CONTENT_PIPELINE_URL = 'http://127.0.0.1:5005';
 let selectedModel = 'auto';
 let isLoading = false;
 let attachedFiles = [];   // { name, type, content, dataUrl }
@@ -958,7 +957,6 @@ const API_KEY_STORAGE = 'irving_api_key';
 const USER_KEY = 'irving_user_id';
 const SIDEBAR_SECTION_KEY_PREFIX = 'irving_sidebar_section_';
 const STUDIO_KEY = 'irving_selected_studio';
-const CONTENT_PIPELINE_KEY = 'irving_content_pipeline_url';
 const MAX_TURNS = 10;
 const CTX_CHARS = 8000;
 const STUDIO_CONFIG = {
@@ -982,6 +980,13 @@ const STUDIO_CONFIG = {
     placeholder: 'Describe the brand system, deck, layout, or campaign asset you need…',
     welcome: 'Graphic design studio active. Use this for brand systems, art direction, decks, campaigns, and visual language.',
     promptPrefix: 'Treat this request as graphic design, brand identity, visual direction, presentation design, layout, typography, and campaign creative unless Daniel explicitly asks to leave this studio.',
+  },
+  content: {
+    label: 'Content Team',
+    status: 'Content',
+    placeholder: 'Describe the audience, platform, offer, and the content you need…',
+    welcome: 'Content team active. Use this for hooks, posts, newsletters, campaigns, editorial calendars, and distribution strategy.',
+    promptPrefix: 'Treat this request as content strategy, editorial planning, campaign messaging, social copy, newsletter writing, and platform-specific publishing unless Daniel explicitly asks to leave this studio.',
   },
 };
 let selectedSubApp = localStorage.getItem(STUDIO_KEY) || 'core';
@@ -1450,12 +1455,6 @@ function selectSubApp(studioId) {
   showToast(`${getStudioConfig().label} active`);
 }
 
-function openContentPipelineApp() {
-  const target = (localStorage.getItem(CONTENT_PIPELINE_KEY) || DEFAULT_CONTENT_PIPELINE_URL).trim() || DEFAULT_CONTENT_PIPELINE_URL;
-  window.open(target, '_blank', 'noopener');
-  showToast('Opening Content Pipeline');
-}
-
 function applyStudioPrompt(rawPrompt) {
   const prompt = (rawPrompt || '').trim();
   const cfg = getStudioConfig();
@@ -1466,6 +1465,7 @@ function applyStudioPrompt(rawPrompt) {
 function getStudioDomainOverride() {
   if (selectedSubApp === 'architecture') return 'architecture';
   if (selectedSubApp === 'design') return 'design';
+  if (selectedSubApp === 'content') return 'content';
   return null;
 }
 
@@ -2023,6 +2023,7 @@ const domainLabels = {
   business_ops: '⚙️ Business Ops',
   health:       '💪 Health',
   design:       '◧ Graphic Design',
+  content:      '✎ Content Team',
   code:         '💻 Code',
   cad:          '📐 AutoCAD / CAD',
 };
@@ -2092,6 +2093,15 @@ function buildStudioQuickPrompts() {
       makeQBtn('✦', 'Campaign asset kit',
         `Act as an art director. Design a campaign asset system for this offer: hero concept, social tiles, one-pager, email/header treatments, and reusable layout rules. Specify palette, type, composition, and how to keep the system coherent across formats.`);
   }
+  if (selectedSubApp === 'content') {
+    return `<div class="qp-section-divider">Content Team</div>` +
+      makeQBtn('✎', 'Post angle options',
+        `Act as my content team. Generate five sharp angles for this idea: one contrarian, one practical, one authority-building, one story-led, and one conversion-oriented. For each, give me the hook and the core promise.`) +
+      makeQBtn('✉', 'Newsletter structure',
+        `Act as an editorial lead. Turn this idea into a newsletter outline with subject line options, opening hook, narrative flow, section structure, CTA, and what to cut so it lands cleanly.`) +
+      makeQBtn('⌘', 'Platform content system',
+        `Act as a platform strategist. Turn this topic or offer into a cross-platform content system for LinkedIn, X, newsletter, and short-form video. Define the role of each platform, asset types, cadence, and how the pieces reinforce each other.`);
+  }
   return `<div class="qp-section-divider">Right now</div>` +
     makeQBtn('🎯', 'What should I focus on right now?',
       `Looking across all my active projects and their current state, what single action right now has the highest leverage? Be specific — name the project, the exact next step, and why it matters most.`) +
@@ -2102,7 +2112,7 @@ function buildStudioQuickPrompts() {
 }
 
 function buildOfflineQuickPrompts() {
-  if (selectedSubApp === 'architecture' || selectedSubApp === 'design') {
+  if (selectedSubApp === 'architecture' || selectedSubApp === 'design' || selectedSubApp === 'content') {
     return buildStudioQuickPrompts();
   }
   return makeQBtn('🎯', 'What should I focus on right now?',
