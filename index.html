@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Irving Insights — Command Center</title>
+<title>Irving Insights - Command Center</title>
 <style>
   :root {
     --bg:        #060d0c;
@@ -19,6 +19,8 @@
     --white:     #e8f4f2;
     --muted:     #5a7a74;
     --danger:    #ff4f4f;
+    --header-h: 57px;
+    --sidebar-w: 236px;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -59,6 +61,25 @@
 
   .header-spacer { flex: 1; }
 
+  .sidebar-toggle {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .sidebar-toggle:hover { border-color: var(--cyan-dim); color: var(--cyan); }
+  .sidebar-collapsed .sidebar-toggle {
+    border-color: rgba(0,229,207,0.3);
+    color: var(--cyan);
+    background: rgba(0,229,207,0.08);
+  }
+
   .status-pill {
     display: flex; align-items: center; gap: 7px;
     background: var(--bg-card); border: 1px solid var(--border);
@@ -81,25 +102,31 @@
     display: flex;
     flex: 1;
     overflow: hidden;
-    height: calc(100vh - 57px);
+    height: calc(100vh - var(--header-h));
     align-items: flex-start;
   }
 
   /* ── LEFT SIDEBAR ── */
   .sidebar {
-    width: 240px;
+    width: var(--sidebar-w);
     flex-shrink: 0;
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
     position: sticky;
-    top: 57px;
-    height: calc(100vh - 57px);
+    top: 0;
+    height: calc(100vh - var(--header-h));
     align-self: flex-start;
+    background: rgba(6,13,12,0.96);
+    transition: width 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
   }
-  .sidebar::-webkit-scrollbar { width: 4px; }
-  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .sidebar-collapsed .sidebar {
+    width: 0;
+    border-right-color: transparent;
+    opacity: 0;
+    pointer-events: none;
+  }
 
   .sidebar-section { border-bottom: 1px solid var(--border); }
   .sidebar-section-header {
@@ -108,7 +135,7 @@
     border: none;
     color: inherit;
     cursor: pointer;
-    padding: 14px 16px;
+    padding: 11px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -135,21 +162,21 @@
     transition: transform 0.15s ease;
   }
   .sidebar-section.collapsed .sidebar-chevron { transform: rotate(-90deg); }
-  .sidebar-section-body { padding: 0 16px 16px; }
+  .sidebar-section-body { padding: 0 14px 12px; }
   .sidebar-section.collapsed .sidebar-section-body { display: none; }
   .sidebar-label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 
   .studio-grid {
     display: grid;
-    gap: 10px;
+    gap: 7px;
   }
   .studio-card {
     width: 100%;
     text-align: left;
     background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px;
+    border-radius: 10px;
+    padding: 9px 10px;
     color: inherit;
     cursor: pointer;
     transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
@@ -169,10 +196,10 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
   .studio-name {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--text);
   }
@@ -181,15 +208,19 @@
     opacity: 0.95;
   }
   .studio-desc {
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: 10px;
+    line-height: 1.35;
     color: var(--muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .studio-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-top: 8px;
+    margin-top: 6px;
     padding: 2px 8px;
     border-radius: 999px;
     font-size: 9px;
@@ -255,26 +286,48 @@
   }
   .toggle input:checked + .toggle-slider { background: rgba(0,229,207,0.15); border-color: var(--cyan); }
   .toggle input:checked + .toggle-slider:before { background: var(--cyan); transform: translateX(16px); box-shadow: 0 0 8px var(--cyan); }
+  .sidebar-subgroup + .sidebar-subgroup { margin-top: 12px; }
+  .sidebar-subgroup-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
 
   /* Quick prompts */
-  .quick-prompts { display: flex; flex-direction: column; gap: 5px; max-height: 160px; overflow-y: auto; }
+  .quick-prompts { display: flex; flex-wrap: wrap; gap: 6px; max-height: 112px; overflow-y: auto; padding-right: 2px; }
   .quick-btn {
     background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 7px; padding: 8px 10px;
+    border-radius: 999px; padding: 7px 10px;
     text-align: left; cursor: pointer;
     font-size: 11px; color: var(--muted);
     transition: all 0.15s;
     display: flex; align-items: center; gap: 7px;
+    line-height: 1.2;
   }
   .quick-btn:hover { border-color: var(--orange-dim); color: var(--white); background: rgba(245,148,10,0.04); }
   .quick-btn .qicon { font-size: 13px; flex-shrink: 0; }
   .qloading { font-size: 11px; color: var(--muted); padding: 8px 2px; font-style: italic; }
   .qp-section-divider { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--muted); padding: 8px 2px 4px; opacity: 0.6; }
+    color: var(--muted); padding: 6px 2px 2px; opacity: 0.6; flex-basis: 100%; }
 
   /* History */
   .history-actions { display:flex; gap:6px; margin-bottom:10px; }
-  .history-list { overflow-y: auto; flex: 1; min-height: 120px; padding: 0; }
+  #sidebarSection-history {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  #sidebarSection-history .sidebar-section-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+  }
+  .history-list { overflow-y: auto; flex: 1; min-height: 0; padding: 0; }
   .history-item {
     padding: 8px 10px; border-radius: 7px; cursor: pointer;
     font-size: 11px; color: var(--muted); line-height: 1.3;
@@ -296,6 +349,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-width: 0;
   }
 
   .messages {
@@ -478,6 +532,56 @@
     background: var(--bg);
     flex-shrink: 0;
   }
+  .composer-tools {
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(12,26,24,0.92), rgba(12,26,24,0.58));
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+  .composer-tools-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .composer-team {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .composer-team-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 54px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(0,229,207,0.24);
+    background: rgba(0,229,207,0.08);
+    color: var(--cyan);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .composer-team-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--white);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .composer-tools-meta {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
 
   .input-wrap {
     display: flex; gap: 10px; align-items: flex-end;
@@ -615,6 +719,7 @@
   /* Responsive */
   @media (max-width: 900px) {
     .sidebar { display: none; }
+    .sidebar-toggle { display: none; }
   }
 </style>
 </head>
@@ -660,11 +765,21 @@
     <span class="name">Command Center</span>
   </div>
 
+  <button
+    class="sidebar-toggle"
+    id="sidebarToggle"
+    type="button"
+    onclick="toggleSidebarCollapsed()"
+    aria-label="Collapse sidebar"
+    aria-expanded="true"
+    title="Collapse sidebar"
+  >&lt;</button>
+
   <div class="header-spacer"></div>
 
   <div class="status-pill" id="statusPill" onclick="checkHealth()" title="Click to refresh status">
     <div class="status-dot" id="statusDot"></div>
-    <span id="statusText">Connecting…</span>
+    <span id="statusText">Connecting...</span>
   </div>
 </header>
 
@@ -681,14 +796,14 @@
           <span>Studios</span>
           <span id="studioStatus" class="sidebar-section-meta"></span>
         </span>
-        <span class="sidebar-chevron">▾</span>
+        <span class="sidebar-chevron">v</span>
       </button>
       <div class="sidebar-section-body">
         <div class="studio-grid" id="studioGrid">
           <button class="studio-card active" id="studioCard-core" onclick="selectSubApp('core')">
             <div class="studio-head">
               <span class="studio-name">Irving Core</span>
-              <span class="studio-icon">◎</span>
+              <span class="studio-icon">C</span>
             </div>
             <div class="studio-desc">General strategy, research, writing, operations, and cross-domain work.</div>
             <span class="studio-pill">Primary</span>
@@ -696,7 +811,7 @@
           <button class="studio-card" id="studioCard-architecture" onclick="selectSubApp('architecture')">
             <div class="studio-head">
               <span class="studio-name">Architecture / CAD</span>
-              <span class="studio-icon">⌂</span>
+              <span class="studio-icon">A</span>
             </div>
             <div class="studio-desc">PeakHinge design review, technical drawings, FreeCAD, and buildable geometry.</div>
             <span class="studio-pill">Studio</span>
@@ -704,7 +819,7 @@
           <button class="studio-card" id="studioCard-design" onclick="selectSubApp('design')">
             <div class="studio-head">
               <span class="studio-name">Graphic Design Team</span>
-              <span class="studio-icon">◧</span>
+              <span class="studio-icon">D</span>
             </div>
             <div class="studio-desc">Brand systems, campaign visuals, deck direction, layouts, and creative reviews.</div>
             <span class="studio-pill">Studio</span>
@@ -712,7 +827,7 @@
           <button class="studio-card" id="studioCard-content" onclick="selectSubApp('content')">
             <div class="studio-head">
               <span class="studio-name">Content Team</span>
-              <span class="studio-icon">✎</span>
+              <span class="studio-icon">T</span>
             </div>
             <div class="studio-desc">Idea shaping, hooks, posts, campaigns, newsletters, and platform-specific content systems.</div>
             <span class="studio-pill">Studio</span>
@@ -722,36 +837,31 @@
     </div>
 
     <!-- Model Selector -->
-    <div class="sidebar-section" id="sidebarSection-model">
-      <button class="sidebar-section-header" onclick="toggleSidebarSection('model')">
-        <span class="sidebar-section-title">Model</span>
-        <span class="sidebar-chevron">▾</span>
+    <div class="sidebar-section" id="sidebarSection-advanced">
+      <button class="sidebar-section-header" onclick="toggleSidebarSection('advanced')">
+        <span class="sidebar-section-title">Advanced</span>
+        <span class="sidebar-chevron">v</span>
       </button>
       <div class="sidebar-section-body">
+      <div class="sidebar-subgroup">
+        <div class="sidebar-subgroup-label">Model</div>
       <div class="model-grid">
         <button class="model-btn active" data-model="auto" onclick="setModel('auto')">
-          <span class="model-icon">⚡</span>Auto
+          <span class="model-icon">A</span>Auto
         </button>
         <button class="model-btn" data-model="claude" onclick="setModel('claude')">
-          <span class="model-icon">🟠</span>Claude
+          <span class="model-icon">C</span>Claude
         </button>
         <button class="model-btn" data-model="gpt" onclick="setModel('gpt')">
-          <span class="model-icon">🟢</span>GPT-4o
+          <span class="model-icon">G</span>GPT-4o
         </button>
         <button class="model-btn" data-model="gemini" onclick="setModel('gemini')">
-          <span class="model-icon">🟣</span>Gemini
+          <span class="model-icon">M</span>Gemini
         </button>
       </div>
       </div>
-    </div>
-
-    <!-- Options -->
-    <div class="sidebar-section" id="sidebarSection-options">
-      <button class="sidebar-section-header" onclick="toggleSidebarSection('options')">
-        <span class="sidebar-section-title">Options</span>
-        <span class="sidebar-chevron">▾</span>
-      </button>
-      <div class="sidebar-section-body">
+      <div class="sidebar-subgroup">
+        <div class="sidebar-subgroup-label">Automation</div>
       <div class="toggle-row">
         <div>
           <div class="toggle-label">Save to Drive</div>
@@ -765,7 +875,7 @@
       <div class="toggle-row" style="margin-top:6px;">
         <div>
           <div class="toggle-label" style="display:flex;align-items:center;gap:6px;">
-            ⚡ Multi-Agent
+            Multi-Agent
             <span style="font-size:9px;background:rgba(245,148,10,0.15);color:var(--orange);padding:1px 5px;border-radius:4px;font-weight:700;">BETA</span>
           </div>
           <div class="toggle-sub">Parallel specialist agents + synthesis</div>
@@ -796,29 +906,13 @@
         </label>
       </div>
       </div>
-    </div>
-
-    <!-- Quick Prompts — generated from live Notion context -->
-    <div class="sidebar-section" id="sidebarSection-prompts">
-      <button class="sidebar-section-header" onclick="toggleSidebarSection('prompts')">
-        <span class="sidebar-section-title">
-          <span>Quick Prompts</span>
-          <span id="qpStatus" class="sidebar-section-meta"></span>
-        </span>
-        <span class="sidebar-chevron">▾</span>
-      </button>
-      <div class="sidebar-section-body">
-      <div class="quick-prompts" id="quickPromptsList">
-        <div class="qloading">Loading context…</div>
-      </div>
       </div>
     </div>
-
     <!-- History -->
     <div class="sidebar-section" id="sidebarSection-history">
       <button class="sidebar-section-header" onclick="toggleSidebarSection('history')">
         <span class="sidebar-section-title">History</span>
-        <span class="sidebar-chevron">▾</span>
+        <span class="sidebar-chevron">v</span>
       </button>
       <div class="sidebar-section-body">
       <div class="history-actions">
@@ -869,7 +963,7 @@
           </svg>
         </div>
         <h2>Ready, Daniel.</h2>
-        <p>Multi-model AI with live Notion &amp; Drive context. Auto-routing picks the best model for every prompt — or choose manually.</p>
+        <p>Multi-model AI with live Notion and Drive context. Auto-routing picks the best model for every prompt - or choose manually.</p>
       </div>
     </div>
 
@@ -881,6 +975,18 @@
         accept="image/*,.pdf,.txt,.md,.csv,.doc,.docx,.json,.py,.js,.ts,.html,.xml"
         onchange="handleFileSelect(this.files)"
       >
+      <div class="composer-tools">
+        <div class="composer-tools-header">
+          <div class="composer-team">
+            <span class="composer-team-badge" id="composerStudioBadge">Core</span>
+            <span class="composer-team-name" id="composerStudioName">Irving Core prompts</span>
+          </div>
+          <span class="composer-tools-meta" id="qpStatus">loading</span>
+        </div>
+        <div class="quick-prompts" id="quickPromptsList">
+          <div class="qloading">Loading context...</div>
+        </div>
+      </div>
       <!-- Attachment preview chips -->
       <div class="attach-preview" id="attachPreview"></div>
       <div class="input-wrap">
@@ -889,17 +995,17 @@
         </button>
         <textarea
           id="promptInput"
-          placeholder="Ask anything across your 6 domains…"
+          placeholder="Ask anything across your 6 domains..."
           rows="1"
           onkeydown="handleKeydown(event)"
           oninput="handleInput(this)"
         ></textarea>
         <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
-          ↑
+          &gt;
         </button>
       </div>
       <div class="input-footer">
-        <span class="input-hint" id="modelHint">⚡ Auto-routing active — best model chosen per prompt</span>
+        <span class="input-hint" id="modelHint">Auto-routing active - best model chosen per prompt</span>
         <span class="char-count" id="charCount"></span>
       </div>
       <div class="ops-bar">
@@ -943,7 +1049,7 @@ const SERVER = storedServer || DEFAULT_SERVER;
 const FREECAD_BRIDGE = (localStorage.getItem('irving_freecad_bridge_url') || 'http://127.0.0.1:8765').replace(/\/$/, '');
 let selectedModel = 'auto';
 let isLoading = false;
-let attachedFiles = [];   // { name, type, content, dataUrl }
+let attachedFiles = [];   // { name, type, content, isImage, sizeBytes, ... }
 let latestExchange = null;
 let serverAuthMode = 'unknown';
 
@@ -956,35 +1062,37 @@ const AUTO_SNAPSHOT_KEY = 'irving_auto_snapshot';
 const API_KEY_STORAGE = 'irving_api_key';
 const USER_KEY = 'irving_user_id';
 const SIDEBAR_SECTION_KEY_PREFIX = 'irving_sidebar_section_';
+const SIDEBAR_COLLAPSED_KEY = 'irving_sidebar_collapsed';
 const STUDIO_KEY = 'irving_selected_studio';
 const MAX_TURNS = 10;
 const CTX_CHARS = 8000;
+const DEFAULT_OPEN_SECTIONS = new Set(['studios']);
 const STUDIO_CONFIG = {
   core: {
     label: 'Irving Core',
     status: 'Core',
-    placeholder: 'Ask anything across your domains…',
-    welcome: 'Multi-model AI with live Notion and Drive context. Auto-routing picks the best model for every prompt — or choose manually.',
+    placeholder: 'Ask anything across your domains...',
+    welcome: 'Multi-model AI with live Notion and Drive context. Auto-routing picks the best model for every prompt - or choose manually.',
     promptPrefix: '',
   },
   architecture: {
     label: 'Architecture / CAD',
     status: 'CAD',
-    placeholder: 'Describe the geometry, drawing, model, or buildability problem you need solved…',
+    placeholder: 'Describe the geometry, drawing, model, or buildability problem you need solved...',
     welcome: 'Architecture and CAD studio active. Use this for PeakHinge, technical drawings, FreeCAD, and buildable geometry.',
     promptPrefix: 'Treat this request as architecture, structural design, CAD drafting, FreeCAD, technical drawing, and buildable geometry unless Daniel explicitly asks to leave this studio.',
   },
   design: {
     label: 'Graphic Design Team',
     status: 'Design',
-    placeholder: 'Describe the brand system, deck, layout, or campaign asset you need…',
+    placeholder: 'Describe the brand system, deck, layout, or campaign asset you need...',
     welcome: 'Graphic design studio active. Use this for brand systems, art direction, decks, campaigns, and visual language.',
     promptPrefix: 'Treat this request as graphic design, brand identity, visual direction, presentation design, layout, typography, and campaign creative unless Daniel explicitly asks to leave this studio.',
   },
   content: {
     label: 'Content Team',
     status: 'Content',
-    placeholder: 'Describe the audience, platform, offer, and the content you need…',
+    placeholder: 'Describe the audience, platform, offer, and the content you need...',
     welcome: 'Content team active. Use this for hooks, posts, newsletters, campaigns, editorial calendars, and distribution strategy.',
     promptPrefix: 'Treat this request as content strategy, editorial planning, campaign messaging, social copy, newsletter writing, and platform-specific publishing unless Daniel explicitly asks to leave this studio.',
   },
@@ -1074,9 +1182,9 @@ function buildConversationContext() {
   let ctx = recent.map(m =>
     m.role === 'user'
       ? `User: ${m.content}`
-      : `Irving: ${m.content.slice(0, 1200)}${m.content.length > 1200 ? '…' : ''}`
+      : `Irving: ${m.content.slice(0, 1200)}${m.content.length > 1200 ? '...' : ''}`
   ).join('\n\n');
-  if (ctx.length > CTX_CHARS) ctx = '…[earlier context trimmed]\n\n' + ctx.slice(-CTX_CHARS);
+  if (ctx.length > CTX_CHARS) ctx = '...[earlier context trimmed]\n\n' + ctx.slice(-CTX_CHARS);
   return `--- Conversation so far ---\n${ctx}\n--- End of context ---\n\n`;
 }
 
@@ -1298,6 +1406,28 @@ function clearMemory() {
   showToast('🧹 Conversation context cleared');
 }
 
+function setSidebarCollapsed(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  const toggle = document.getElementById('sidebarToggle');
+  if (toggle) {
+    toggle.textContent = collapsed ? '>' : '<';
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+    toggle.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  }
+  try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch {}
+}
+
+function toggleSidebarCollapsed() {
+  setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+}
+
+function restoreSidebarCollapsed() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch {}
+  setSidebarCollapsed(collapsed);
+}
+
 function setSidebarSectionState(sectionId, expanded) {
   const section = document.getElementById(`sidebarSection-${sectionId}`);
   if (!section) return;
@@ -1312,7 +1442,7 @@ function toggleSidebarSection(sectionId) {
 }
 
 function restoreSidebarSections() {
-  ['studios', 'model', 'options', 'prompts', 'history'].forEach(sectionId => {
+  ['studios', 'advanced', 'history'].forEach(sectionId => {
     let stored = null;
     try { stored = localStorage.getItem(`${SIDEBAR_SECTION_KEY_PREFIX}${sectionId}`); } catch {}
     if (sectionId === 'history' && stored === null) {
@@ -1321,49 +1451,122 @@ function restoreSidebarSections() {
         if (legacy === '0') stored = '0';
       } catch {}
     }
-    setSidebarSectionState(sectionId, stored !== '0');
+    const defaultExpanded = DEFAULT_OPEN_SECTIONS.has(sectionId);
+    setSidebarSectionState(sectionId, stored === null ? defaultExpanded : stored !== '0');
   });
 }
 
 // ── FILE ATTACHMENT ──────────────────────────────────────
 function fileIcon(type) {
-  if (type.startsWith('image/'))          return '🖼';
-  if (type === 'application/pdf')         return '📄';
-  if (type.includes('word') || type.includes('document')) return '📝';
-  if (['text/csv','application/csv'].includes(type))      return '📊';
-  if (type.includes('json'))              return '🔧';
-  return '📎';
+  if (type.startsWith('image/'))          return 'IMG';
+  if (type === 'application/pdf')         return 'PDF';
+  if (type.includes('word') || type.includes('document')) return 'DOC';
+  if (['text/csv','application/csv'].includes(type))      return 'CSV';
+  if (type.includes('json'))              return 'JSON';
+  return 'FILE';
 }
 
-function handleFileSelect(files) {
+function formatFileSize(bytes) {
+  if (!bytes || bytes <= 0) return '0 KB';
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(String(e.target?.result || ''));
+    reader.onerror = () => reject(reader.error || new Error(`Failed to read ${file.name}`));
+    reader.readAsText(file);
+  });
+}
+
+function readImageMetadata(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const meta = { width: img.naturalWidth, height: img.naturalHeight };
+      URL.revokeObjectURL(objectUrl);
+      resolve(meta);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`Failed to read image metadata for ${file.name}`));
+    };
+    img.src = objectUrl;
+  });
+}
+
+function isTextAttachment(file) {
+  const type = (file.type || '').toLowerCase();
+  const name = (file.name || '').toLowerCase();
+  return (
+    type.startsWith('text/') ||
+    [
+      'application/json',
+      'application/xml',
+      'application/javascript',
+      'application/typescript',
+      'application/x-javascript',
+      'text/csv',
+    ].includes(type) ||
+    /\.(txt|md|csv|json|py|js|ts|tsx|jsx|html|xml|css|yml|yaml)$/i.test(name)
+  );
+}
+
+async function buildAttachmentRecord(file) {
+  if (file.type.startsWith('image/')) {
+    const meta = await readImageMetadata(file);
+    return {
+      name: file.name,
+      type: file.type,
+      content: null,
+      isImage: true,
+      width: meta.width,
+      height: meta.height,
+      sizeBytes: file.size,
+    };
+  }
+
+  if (isTextAttachment(file)) {
+    const content = await readFileAsText(file);
+    return {
+      name: file.name,
+      type: file.type,
+      content,
+      isImage: false,
+      sizeBytes: file.size,
+    };
+  }
+
+  return {
+    name: file.name,
+    type: file.type,
+    content: null,
+    isImage: false,
+    sizeBytes: file.size,
+    isBinary: true,
+  };
+}
+
+async function handleFileSelect(files) {
   const MAX_FILES = 5;
   for (const file of files) {
     if (attachedFiles.length >= MAX_FILES) { showToast('Max 5 attachments'); break; }
     if (file.size > 10 * 1024 * 1024) { showToast(`${file.name} is too large (max 10 MB)`); continue; }
-    const reader = new FileReader();
-    const isImage = file.type.startsWith('image/');
-
-    reader.onload = (e) => {
-      const result = e.target.result;
-      attachedFiles.push({
-        name:    file.name,
-        type:    file.type,
-        content: isImage ? null : result,       // text content
-        dataUrl: isImage ? result : null,        // base64 data URL
-        isImage,
-      });
-      renderAttachments();
-      updateAttachBtn();
-      // Trigger button state update
-      handleInput(document.getElementById('promptInput'));
-    };
-
-    if (isImage) {
-      reader.readAsDataURL(file);
-    } else {
-      reader.readAsText(file);
+    try {
+      attachedFiles.push(await buildAttachmentRecord(file));
+      if (file.type.startsWith('image/')) {
+        showToast(`Attached ${file.name} as lightweight image metadata`);
+      }
+    } catch (err) {
+      showToast(err.message || `Failed to attach ${file.name}`);
     }
   }
+  renderAttachments();
+  updateAttachBtn();
+  handleInput(document.getElementById('promptInput'));
   // Reset input so same file can be re-selected
   document.getElementById('fileInput').value = '';
 }
@@ -1374,7 +1577,7 @@ function renderAttachments() {
     <div class="attach-chip ${f.isImage ? 'image-chip' : ''}">
       <span class="chip-icon">${fileIcon(f.type)}</span>
       <span class="chip-name" title="${f.name}">${f.name}</span>
-      <button class="chip-remove" onclick="removeAttachment(${i})" title="Remove">✕</button>
+      <button class="chip-remove" onclick="removeAttachment(${i})" title="Remove">x</button>
     </div>
   `).join('');
 }
@@ -1389,7 +1592,7 @@ function updateAttachBtn() {
   const btn = document.getElementById('attachBtn');
   btn.classList.toggle('has-files', attachedFiles.length > 0);
   btn.title = attachedFiles.length > 0
-    ? `${attachedFiles.length} file(s) attached — click to add more`
+    ? `${attachedFiles.length} file(s) attached - click to add more`
     : 'Attach file, image, or document';
 }
 
@@ -1398,22 +1601,26 @@ function buildFileContext() {
   if (attachedFiles.length === 0) return '';
   const parts = attachedFiles.map(f => {
     if (f.isImage) {
-      return `[Attached image: ${f.name}]\n(Image data: ${f.dataUrl})`;
+      const dims = f.width && f.height ? `, ${f.width}x${f.height}` : '';
+      return `[Attached image: ${f.name} (${f.type || 'image'}${dims}, ${formatFileSize(f.sizeBytes)})]\nUse the image as a referenced attachment only. Ask the user for a description or extracted details if direct pixel inspection is required.`;
+    }
+    if (f.isBinary) {
+      return `[Attached file: ${f.name} (${f.type || 'binary file'}, ${formatFileSize(f.sizeBytes)})]\nBinary attachment present. Use the filename and file type as context only; ask for extracted text if deeper inspection is required.`;
     }
     const snippet = f.content && f.content.length > 12000
-      ? f.content.slice(0, 12000) + '\n… [truncated]'
+      ? f.content.slice(0, 12000) + '\n... [truncated]'
       : f.content || '';
-    return `[Attached file: ${f.name} (${f.type || 'unknown type'})]\n---\n${snippet}\n---`;
+    return `[Attached file: ${f.name} (${f.type || 'text file'}, ${formatFileSize(f.sizeBytes)})]\n---\n${snippet}\n---`;
   });
   return parts.join('\n\n') + '\n\n';
 }
 
 // ── MODEL SELECTION ──────────────────────────────────────
 const MODEL_HINTS = {
-  auto:   '⚡ Auto-routing active — best model chosen per prompt',
-  claude: '🟠 Claude Opus 4 — strategy, writing, analysis',
-  gpt:    '🟢 GPT-4o — code, APIs, structured output',
-  gemini: '🟣 Gemini 1.5 Pro — research, lookup, synthesis',
+  auto:   'Auto-routing active - best model chosen per prompt',
+  claude: 'Claude Opus 4 - strategy, writing, analysis',
+  gpt:    'GPT-4o - code, APIs, structured output',
+  gemini: 'Gemini 1.5 Pro - research, lookup, synthesis',
 };
 
 function getStudioConfig() {
@@ -1432,6 +1639,10 @@ function syncStudioUi() {
     status.textContent = cfg.status;
     status.title = cfg.label;
   }
+  const composerBadge = document.getElementById('composerStudioBadge');
+  if (composerBadge) composerBadge.textContent = cfg.status;
+  const composerName = document.getElementById('composerStudioName');
+  if (composerName) composerName.textContent = `${cfg.label} prompts`;
   const ta = document.getElementById('promptInput');
   if (ta) {
     ta.placeholder = cfg.placeholder;
@@ -1482,25 +1693,25 @@ async function checkHealth(isRetry = false) {
   const dot  = document.getElementById('statusDot');
   const text = document.getElementById('statusText');
   dot.className  = 'status-dot';
-  text.textContent = isRetry ? 'Waking up…' : 'Connecting…';
+  text.textContent = isRetry ? 'Waking up...' : 'Connecting...';
   try {
-    // Cloud Run may scale to zero — allow up to 55s for cold start
+    // Cloud Run may scale to zero - allow up to 55s for cold start
     const r = await fetch(`${SERVER}/health`, { signal: AbortSignal.timeout(55000) });
     const d = await r.json();
     serverAuthMode = d.auth || 'unknown';
     const allReady = d.status === 'ok';
     dot.className = allReady ? 'status-dot ok' : 'status-dot err';
     const models = Object.entries(d.models || {})
-      .filter(([,v]) => v === 'ready').map(([k]) => k.toUpperCase()).join(' · ');
-    text.textContent = allReady ? `Live · ${models}` : 'Degraded';
+      .filter(([,v]) => v === 'ready').map(([k]) => k.toUpperCase()).join(' | ');
+    text.textContent = allReady ? `Live | ${models}` : 'Degraded';
   } catch (e) {
     if (!isRetry && e.name === 'TimeoutError') {
-      // First timeout — server may be cold-starting, retry once
-      text.textContent = 'Waking up…';
+      // First timeout - server may be cold-starting, retry once
+      text.textContent = 'Waking up...';
       setTimeout(() => checkHealth(true), 2000);
     } else {
       dot.className = 'status-dot err';
-      text.textContent = 'Offline — click to retry';
+      text.textContent = 'Offline - click to retry';
     }
   }
 }
@@ -1619,8 +1830,8 @@ async function sendMessage() {
       panel.id = agentPanelId;
       panel.className = 'agent-panel';
       panel.innerHTML =
-        `<div class="agent-panel-title">⚡ Dispatching agents…</div>` +
-        `<div class="agent-row"><div class="agent-dot running"></div><span class="agent-name">Decomposer</span><span class="agent-model-tag">analyzing task…</span></div>`;
+        `<div class="agent-panel-title">Dispatching agents...</div>` +
+        `<div class="agent-row"><div class="agent-dot running"></div><span class="agent-name">Decomposer</span><span class="agent-model-tag">analyzing task...</span></div>`;
       document.getElementById('messages').appendChild(panel);
       document.getElementById('messages').scrollTop = 99999;
     }
@@ -1658,7 +1869,7 @@ async function sendMessage() {
             <span class="agent-model-tag">${status}</span>
           </div>`;
         }).join('');
-        panel.innerHTML = `<div class="agent-panel-title">⚡ ${d.agents.length} agents · ${elapsed}s</div>${agentRows}`;
+        panel.innerHTML = `<div class="agent-panel-title">${d.agents.length} agents | ${elapsed}s</div>${agentRows}`;
         // Fade out after 4s
         setTimeout(() => { if (panel) panel.style.transition='opacity 1s'; panel.style.opacity='0'; setTimeout(()=>panel.remove(),1000); }, 4000);
       }
@@ -1674,13 +1885,13 @@ async function sendMessage() {
     appendMessage('ai', aiResponse, d.orchestrated ? 'claude' : modelUsed, d, elapsed);
 
     if (d.orchestrated) {
-      showToast(`⚡ ${d.agents?.length || 0} agents synthesized in ${elapsed}s`);
+      showToast(`${d.agents?.length || 0} agents synthesized in ${elapsed}s`);
     } else if (d.script_format === 'freecad') {
-      showToast('FreeCAD macro ready — use Run in FreeCAD to generate files locally');
+      showToast('FreeCAD macro ready - use Run in FreeCAD to generate files locally');
     } else if (d.script_format) {
       showToast(`${d.script_format.toUpperCase()} CAD output ready`);
     } else if (d.domain && d.domain !== 'default') {
-      showToast(`🎯 ${domainLabels[d.domain] || d.domain} expert activated`);
+      showToast(`${domainLabels[d.domain] || d.domain} expert active`);
     }
 
     // Save to persistent memory
@@ -1719,23 +1930,23 @@ async function sendMessage() {
     const isNetErr = err.message === 'Failed to fetch' || err.name === 'TypeError'
                   || err.name === 'TimeoutError' || err.name === 'AbortError';
     if (isNetErr) {
-      // Server may be cold-starting — wait until /health confirms ready, then retry
+      // Server may be cold-starting - wait until /health confirms ready, then retry
       const dot  = document.getElementById('statusDot');
       const stxt = document.getElementById('statusText');
       dot.className  = 'status-dot';
-      stxt.textContent = 'Waking up…';
-      showToast('Server waking up — retrying when ready…');
+      stxt.textContent = 'Waking up...';
+      showToast('Server waking up - retrying when ready...');
 
       const serverReady = await waitForServerReady(90000);
 
       if (!serverReady) {
         dot.className    = 'status-dot err';
-        stxt.textContent = 'Offline — click to retry';
+        stxt.textContent = 'Offline - click to retry';
         appendMessage('ai',
           'Server is still starting up. Wait 30 seconds then send your message again.',
           'auto', null, null);
       } else {
-        // Server confirmed ready — fire the real retry
+        // Server confirmed ready - fire the real retry
         checkHealth(); // refresh status pill
         const retryId = 'retry-' + Date.now();
         appendTyping(retryId);
@@ -2015,17 +2226,17 @@ function renderMarkdown(text) {
 
 const modelLabels  = { claude: 'Claude Opus', gpt: 'GPT-4o', gemini: 'Gemini 1.5', auto: 'Auto' };
 const domainLabels = {
-  architecture:'🏠 Architecture',
-  structural:   '🏗 Structural / Arch',
-  strategy:     '📊 Strategy',
-  writing:      '✍️ Writing',
-  hockey:       '🏑 Field Hockey',
-  business_ops: '⚙️ Business Ops',
-  health:       '💪 Health',
-  design:       '◧ Graphic Design',
-  content:      '✎ Content Team',
-  code:         '💻 Code',
-  cad:          '📐 AutoCAD / CAD',
+  architecture: 'Architecture',
+  structural:   'Structural / Arch',
+  strategy:     'Strategy',
+  writing:      'Writing',
+  hockey:       'Field Hockey',
+  business_ops: 'Business Ops',
+  health:       'Health',
+  design:       'Graphic Design',
+  content:      'Content Team',
+  code:         'Code',
+  cad:          'AutoCAD / CAD',
 };
 
 // ── TOAST ────────────────────────────────────────────────
@@ -2040,15 +2251,15 @@ function showToast(msg) {
 
 function snapIcon(name) {
   const n = (name || '').toLowerCase();
-  if (/peakhinge|a-frame|hinge|dwelling/.test(n))     return '🏗';
-  if (/book|writing|uncertainty|resilience/.test(n))  return '✍️';
-  if (/irving insights|consulting|strategy/.test(n))  return '💼';
-  if (/health|condition|wellbeing/.test(n))           return '💪';
-  if (/hockey/.test(n))                               return '🏑';
-  if (/tbk|business.?ops/.test(n))                    return '⚙️';
-  if (/agent|ai.?stack|server/.test(n))               return '🤖';
-  if (/homestead|land/.test(n))                       return '🌲';
-  return '📌';
+  if (/peakhinge|a-frame|hinge|dwelling/.test(n))     return 'ARCH';
+  if (/book|writing|uncertainty|resilience/.test(n))  return 'WRITE';
+  if (/irving insights|consulting|strategy/.test(n))  return 'BIZ';
+  if (/health|condition|wellbeing/.test(n))           return 'HEALTH';
+  if (/hockey/.test(n))                               return 'SPORT';
+  if (/tbk|business.?ops/.test(n))                    return 'OPS';
+  if (/agent|ai.?stack|server/.test(n))               return 'AI';
+  if (/homestead|land/.test(n))                       return 'LAND';
+  return 'NOTE';
 }
 
 function shortProjectName(name) {
@@ -2077,37 +2288,37 @@ function makeQBtn(icon, label, prompt) {
 function buildStudioQuickPrompts() {
   if (selectedSubApp === 'architecture') {
     return `<div class="qp-section-divider">Architecture / CAD</div>` +
-      makeQBtn('🏠', 'Architectural concept review',
+      makeQBtn('ARCH', 'Architectural concept review',
         `Act as an architectural design expert. Review this building idea for layout logic, circulation, envelope concept, and buildability. Tell me what is elegant, what is awkward, and what should be revised before moving into detailed drawing.`) +
-      makeQBtn('📐', 'Generate CAD drawing script',
+      makeQBtn('CAD', 'Generate CAD drawing script',
         `Using my current PeakHinge project context as ground truth, generate an AutoCAD script (.scr) for the actual PeakHinge tri-fold system. Include a legible floor plan, front elevation, and side elevation with meaningful hinge, cassette, and ridge geometry on separate AIA-style layers. Do not fall back to a generic A-frame sketch. Explain exactly how to run it in AutoCAD.`) +
-      makeQBtn('🧱', 'Generate FreeCAD macro',
+      makeQBtn('3D', 'Generate FreeCAD macro',
         `Using my current PeakHinge project context as ground truth, generate a FreeCAD macro for the actual PeakHinge tri-fold system. Model the paired rafter panels, knee walls, plinth cassette, ridge pipe axis, and loft-related geometry for the locked PH-144 dimensions. Do not return a generic massing model or placeholder boxes. Return build_model(doc) and explain FCStd and STEP export.`);
   }
   if (selectedSubApp === 'design') {
     return `<div class="qp-section-divider">Graphic Design Team</div>` +
-      makeQBtn('◧', 'Brand direction sprint',
+      makeQBtn('DES', 'Brand direction sprint',
         `Act as my senior graphic design team. Build three distinct visual directions for this brand or offer. For each direction, define audience fit, typography, color system, imagery style, layout behavior, and what would make it feel premium rather than generic.`) +
-      makeQBtn('🖹', 'Deck system design',
+      makeQBtn('DECK', 'Deck system design',
         `Act as a presentation design lead. Turn this idea into a sharp deck system: narrative arc, slide types, hierarchy rules, typography, chart treatment, image treatment, and page-level layout guidance. Be opinionated about what to cut.`) +
-      makeQBtn('✦', 'Campaign asset kit',
+      makeQBtn('KIT', 'Campaign asset kit',
         `Act as an art director. Design a campaign asset system for this offer: hero concept, social tiles, one-pager, email/header treatments, and reusable layout rules. Specify palette, type, composition, and how to keep the system coherent across formats.`);
   }
   if (selectedSubApp === 'content') {
     return `<div class="qp-section-divider">Content Team</div>` +
-      makeQBtn('✎', 'Post angle options',
+      makeQBtn('POST', 'Post angle options',
         `Act as my content team. Generate five sharp angles for this idea: one contrarian, one practical, one authority-building, one story-led, and one conversion-oriented. For each, give me the hook and the core promise.`) +
-      makeQBtn('✉', 'Newsletter structure',
+      makeQBtn('MAIL', 'Newsletter structure',
         `Act as an editorial lead. Turn this idea into a newsletter outline with subject line options, opening hook, narrative flow, section structure, CTA, and what to cut so it lands cleanly.`) +
-      makeQBtn('⌘', 'Platform content system',
+      makeQBtn('SYS', 'Platform content system',
         `Act as a platform strategist. Turn this topic or offer into a cross-platform content system for LinkedIn, X, newsletter, and short-form video. Define the role of each platform, asset types, cadence, and how the pieces reinforce each other.`);
   }
   return `<div class="qp-section-divider">Right now</div>` +
-    makeQBtn('🎯', 'What should I focus on right now?',
-      `Looking across all my active projects and their current state, what single action right now has the highest leverage? Be specific — name the project, the exact next step, and why it matters most.`) +
-    makeQBtn('📊', '80/20 this week',
+    makeQBtn('NOW', 'What should I focus on right now?',
+      `Looking across all my active projects and their current state, what single action right now has the highest leverage? Be specific - name the project, the exact next step, and why it matters most.`) +
+    makeQBtn('8020', '80/20 this week',
       `Apply the 80/20 rule across all my domains. What is the 20% of work that will drive 80% of results this week? Give me a ranked list with reasoning.`) +
-    makeQBtn('🔥', 'What is at risk?',
+    makeQBtn('RISK', 'What is at risk?',
       `What in my current work is most at risk of stalling or being dropped? Identify the specific blockers and give me concrete actions to address them.`);
 }
 
@@ -2115,139 +2326,12 @@ function buildOfflineQuickPrompts() {
   if (selectedSubApp === 'architecture' || selectedSubApp === 'design' || selectedSubApp === 'content') {
     return buildStudioQuickPrompts();
   }
-  return makeQBtn('🎯', 'What should I focus on right now?',
+  return makeQBtn('NOW', 'What should I focus on right now?',
       `What is the single highest-leverage thing I should be working on right now?`) +
-    makeQBtn('📊', '80/20 this week',
+    makeQBtn('8020', '80/20 this week',
       `Apply the 80/20 rule across my active projects. What is the 20% that drives 80% of results this week?`) +
-    makeQBtn('🔥', 'What is at risk?',
+    makeQBtn('RISK', 'What is at risk?',
       `What in my current work is most at risk of stalling? Name the blockers and the actions to address them.`);
-}
-
-async function loadContextPromptsLegacy() {
-  const list   = document.getElementById('quickPromptsList');
-  const status = document.getElementById('qpStatus');
-
-  try {
-    const res  = await fetch(`${SERVER}/context`, {
-      headers: apiHeaders(false),
-      signal: AbortSignal.timeout(20000)
-    });
-    if (!res.ok) {
-      let detail = `HTTP ${res.status}`;
-      try {
-        const errData = await res.json();
-        detail = errData.detail || errData.error || detail;
-      } catch {}
-      const err = new Error(detail);
-      err.status = res.status;
-      throw err;
-    }
-    const data = await res.json();
-    const snaps = data.snapshots || [];
-
-    let html = buildStudioQuickPrompts();
-    // Studio-aware prompts supersede the older generic prompt set below.
-    if (selectedSubApp) {
-      if (snaps.length > 0) {
-        html += `<div class="qp-section-divider">From your projects</div>`;
-
-        for (const snap of snaps) {
-          const icon      = snapIcon(snap.name);
-          const shortName = shortProjectName(snap.name);
-          const nextMove  = firstSentence(snap.recommended_next_moves || snap.top_3_priorities || '');
-          const stateSnip = (snap.current_state || '').substring(0, 300);
-          const movesSnip = (snap.recommended_next_moves || '').substring(0, 300);
-          const riskSnip  = (snap.risks_blockers || '').substring(0, 150);
-
-          if (!nextMove) continue;
-
-          const label = `${shortName}: ${nextMove.length > 42 ? nextMove.substring(0,42)+'…' : nextMove}`;
-          const prompt = `Project: ${snap.name}\n\nCurrent state: ${stateSnip}\n\nRecommended next move: ${movesSnip}${riskSnip ? '\n\nRisks/blockers: ' + riskSnip : ''}\n\nHelp me execute this next move. What should I do first, and what's the fastest path to progress today?`;
-
-          html += makeQBtn(icon, label, prompt);
-        }
-
-        const projectList = snaps.map(s => shortProjectName(s.name)).join(', ');
-        html += `<div class="qp-section-divider">Across all</div>`;
-        html += makeQBtn('⚡', 'Where are the blockers?',
-          `Across ${projectList}: which project has the most critical unresolved blocker right now, and what is the single action that would unblock it?`);
-      }
-
-      list.innerHTML = html;
-      if (snaps.length > 0) {
-        status.textContent = `${snaps.length} live`;
-        status.title = `Quick prompts loaded from Notion context snapshots for ${getStudioConfig().label}`;
-      } else {
-        status.textContent = getStudioConfig().status;
-        status.title = `Studio quick prompts for ${getStudioConfig().label}`;
-      }
-      return;
-    }
-
-    // ── Always-present cross-domain prompt ──
-    html += `<div class="qp-section-divider">Right now</div>`;
-    html += makeQBtn('🎯', 'What should I focus on right now?',
-      `Looking across all my active projects and their current state, what single action right now has the highest leverage? Be specific — name the project, the exact next step, and why it matters most.`);
-    html += `<div class="qp-section-divider">Architecture / CAD</div>`;
-    html += makeQBtn('🏠', 'Architectural concept review',
-      `Act as an architectural design expert. Review this building idea for layout logic, circulation, envelope concept, and buildability. Tell me what is elegant, what is awkward, and what should be revised before moving into detailed drawing.`);
-    html += makeQBtn('📐', 'Generate CAD drawing script',
-      `Using my current PeakHinge project context as ground truth, generate an AutoCAD script (.scr) for the actual PeakHinge tri-fold system. Include a legible floor plan, front elevation, and side elevation with meaningful hinge, cassette, and ridge geometry on separate AIA-style layers. Do not fall back to a generic A-frame sketch. Explain exactly how to run it in AutoCAD.`);
-    html += makeQBtn('🧱', 'Generate FreeCAD macro',
-      `Using my current PeakHinge project context as ground truth, generate a FreeCAD macro for the actual PeakHinge tri-fold system. Model the paired rafter panels, knee walls, plinth cassette, ridge pipe axis, and loft-related geometry for the locked PH-144 dimensions. Do not return a generic massing model or placeholder boxes. Return build_model(doc) and explain FCStd and STEP export.`);
-
-    if (snaps.length === 0) {
-      // Server awake but no snapshots yet
-      html += makeQBtn('📊', '80/20 this week',
-        `Apply the 80/20 rule across all my domains. What is the 20% of work that will drive 80% of results this week? Give me a ranked list with reasoning.`);
-      html += makeQBtn('🔥', 'What is at risk?',
-        `What in my current work is most at risk of stalling or being dropped? Identify the specific blockers and give me concrete actions to address them.`);
-    } else {
-      html += `<div class="qp-section-divider">From your projects</div>`;
-
-      for (const snap of snaps) {
-        const icon      = snapIcon(snap.name);
-        const shortName = shortProjectName(snap.name);
-        const nextMove  = firstSentence(snap.recommended_next_moves || snap.top_3_priorities || '');
-        const stateSnip = (snap.current_state || '').substring(0, 300);
-        const movesSnip = (snap.recommended_next_moves || '').substring(0, 300);
-        const riskSnip  = (snap.risks_blockers || '').substring(0, 150);
-
-        if (!nextMove) continue;
-
-        // Label: "ProjectName: first next move (truncated)"
-        const label = `${shortName}: ${nextMove.length > 42 ? nextMove.substring(0,42)+'…' : nextMove}`;
-
-        // Prompt: grounded in the actual snapshot data
-        const prompt = `Project: ${snap.name}\n\nCurrent state: ${stateSnip}\n\nRecommended next move: ${movesSnip}${riskSnip ? '\n\nRisks/blockers: ' + riskSnip : ''}\n\nHelp me execute this next move. What should I do first, and what's the fastest path to progress today?`;
-
-        html += makeQBtn(icon, label, prompt);
-      }
-
-      // Synthesizer prompt using all loaded context
-      const projectList = snaps.map(s => shortProjectName(s.name)).join(', ');
-      html += `<div class="qp-section-divider">Across all</div>`;
-      html += makeQBtn('⚡', 'Where are the blockers?',
-        `Across ${projectList}: which project has the most critical unresolved blocker right now, and what is the single action that would unblock it?`);
-    }
-
-    list.innerHTML = html;
-    if (snaps.length > 0) {
-      status.textContent = `${snaps.length} live`;
-      status.title = 'Quick prompts loaded from Notion context snapshots';
-    }
-
-  } catch (e) {
-    // Server cold or unreachable — show minimal static fallbacks
-    list.innerHTML =
-      makeQBtn('🎯', 'What should I focus on right now?',
-        `What is the single highest-leverage thing I should be working on right now?`) +
-      makeQBtn('📊', '80/20 this week',
-        `Apply the 80/20 rule across my active projects. What is the 20% that drives 80% of results this week?`) +
-      makeQBtn('🔥', 'What is at risk?',
-        `What in my current work is most at risk of stalling? Name the blockers and the actions to address them.`);
-    status.textContent = 'offline';
-  }
 }
 
 // ── INIT ────────────────────────────────────────────────
@@ -2288,14 +2372,14 @@ async function loadContextPrompts() {
 
         if (!nextMove) continue;
 
-        const label = `${shortName}: ${nextMove.length > 42 ? nextMove.substring(0,42)+'…' : nextMove}`;
+        const label = `${shortName}: ${nextMove.length > 42 ? nextMove.substring(0,42)+'...' : nextMove}`;
         const prompt = `Project: ${snap.name}\n\nCurrent state: ${stateSnip}\n\nRecommended next move: ${movesSnip}${riskSnip ? '\n\nRisks/blockers: ' + riskSnip : ''}\n\nHelp me execute this next move. What should I do first, and what's the fastest path to progress today?`;
         html += makeQBtn(icon, label, prompt);
       }
 
       const projectList = snaps.map(s => shortProjectName(s.name)).join(', ');
       html += `<div class="qp-section-divider">Across all</div>`;
-      html += makeQBtn('⚡', 'Where are the blockers?',
+      html += makeQBtn('BLOCK', 'Where are the blockers?',
         `Across ${projectList}: which project has the most critical unresolved blocker right now, and what is the single action that would unblock it?`);
     }
 
@@ -2336,12 +2420,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   restoreSidebarSections();
+  restoreSidebarCollapsed();
   syncStudioUi();
 
   // Show memory indicator if context exists
   if (conversationMemory.length > 0) {
     const turns = Math.floor(conversationMemory.length / 2);
-    showToast(`💬 ${turns} prior turn${turns !== 1 ? 's' : ''} in context`);
+    showToast(`${turns} prior turn${turns !== 1 ? 's' : ''} in context`);
   }
 
   // Load context-driven quick prompts
@@ -2350,3 +2435,4 @@ document.addEventListener('DOMContentLoaded', async () => {
 </script>
 </body>
 </html>
+
