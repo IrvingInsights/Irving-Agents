@@ -1492,8 +1492,12 @@ async function sendMessage() {
     latestExchange = buildOperationalPayload(rawPrompt || displayMsg, aiResponse);
     void maybeRunAutoOps(latestExchange);
 
-    if (body.store_to_drive && d.drive_output_link) {
-      showToast('✓ Saved to Google Drive');
+    if (body.store_to_drive) {
+      if (d.drive_output_link) {
+        showToast('✓ Saved to Google Drive');
+      } else if (d.drive_output_error) {
+        showToast(`Drive save failed: ${d.drive_output_error}`);
+      }
     }
   } catch (err) {
     document.getElementById(agentPanelId)?.remove();

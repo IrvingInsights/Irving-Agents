@@ -235,10 +235,10 @@ def get_drive_context(query: str = "", max_files: int = 3) -> str:
         return ""
 
 
-def save_to_drive(filename: str, content: str, folder_id: str = None) -> Optional[str]:
+def save_to_drive(filename: str, content: str, folder_id: str = None) -> tuple[Optional[str], Optional[str]]:
     drive = _get_drive_service()
     if not drive:
-        return None
+        return None, "Google Drive is not configured"
     try:
         from googleapiclient.http import MediaInMemoryUpload
         target = folder_id or DRIVE_OUTPUT_FOLDER_ID
@@ -247,10 +247,10 @@ def save_to_drive(filename: str, content: str, folder_id: str = None) -> Optiona
             meta["parents"] = [target]
         media = MediaInMemoryUpload(content.encode("utf-8"), mimetype="text/plain", resumable=False)
         file  = drive.files().create(body=meta, media_body=media, fields="id,webViewLink").execute()
-        return file.get("webViewLink")
+        return file.get("webViewLink"), None
     except Exception as e:
         logger.error(f"Error saving to Drive: {e}")
-        return None
+        return None, str(e)
 
 
 # ── Notion helpers ────────────────────────────────────────────────────────────
@@ -1343,9 +1343,10 @@ async def run(request: RunRequest, api_key: Optional[str] = Security(api_key_hea
 
     # 4. Optionally save to Drive
     drive_link = None
+    drive_error = None
     if request.store_to_drive:
         ts         = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        drive_link = save_to_drive(
+        drive_link, drive_error = save_to_drive(
             filename  = f"Irving_{domain}_{model_used}_{ts}",
             content   = f"Prompt:\n{request.prompt}\n\n---\n\nResponse ({model_used}, {domain} expert):\n{response_text}",
             folder_id = request.drive_folder_id,
@@ -1361,6 +1362,7 @@ async def run(request: RunRequest, api_key: Optional[str] = Security(api_key_hea
         "notion_context_used":        bool(snapshots),
         "drive_context_used":         bool(drive_context),
         "drive_output_link":          drive_link,
+        "drive_output_error":         drive_error,
     }
 
 
