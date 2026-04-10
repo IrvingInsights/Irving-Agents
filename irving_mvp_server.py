@@ -155,6 +155,7 @@ class RunRequest(BaseModel):
     model: Optional[str] = "auto"
     store_to_drive: Optional[bool] = False
     drive_folder_id: Optional[str] = None
+    domain_override: Optional[str] = None
 
 class QueueItem(BaseModel):
     item: str
@@ -507,6 +508,19 @@ EXPERT_PERSONAS = {
         "- Flag when something requires professional medical evaluation"
     ),
 
+    "design": (
+        "You are a senior graphic design team: brand strategist, art director, editorial designer, "
+        "presentation designer, and campaign creative lead. You help Daniel shape visual systems, "
+        "brand language, slide decks, landing-page direction, social assets, and marketing concepts.\n\n"
+        "When answering:\n"
+        "- Start with the communication goal and audience before visual tactics\n"
+        "- Give specific direction on hierarchy, typography, composition, palette, imagery, and layout\n"
+        "- Distinguish between brand system decisions, campaign concepts, and execution-ready asset guidance\n"
+        "- Be opinionated about what feels generic, muddy, overdesigned, or off-brand\n"
+        "- Translate abstract taste into concrete design moves and reusable rules\n"
+        "- When useful, propose asset sets, component systems, or deck/page structures instead of isolated ideas"
+    ),
+
     "code": (
         "You are a senior software architect and full-stack engineer with deep experience "
         "building production Python APIs, React frontends, and cloud-deployed services. "
@@ -624,6 +638,14 @@ _DOMAIN_SIGNALS = [
         "running plan", "supplement", "biometric", "hrv", "vo2 max",
         "health goal", "fitness",
     ]),
+    ("design", [
+        "graphic design", "brand identity", "brand system", "visual identity",
+        "visual design", "art direction", "creative direction", "typography",
+        "color palette", "moodboard", "poster", "flyer", "social graphic",
+        "campaign visual", "deck design", "slide design", "presentation design",
+        "canva", "figma", "cover art", "visual language", "layout concept",
+        "look and feel", "design system",
+    ]),
     ("code", [
         "python code", "javascript", "react component", "fastapi", "endpoint",
         "function", "script", "bug fix", "error trace", "deploy", "render.com",
@@ -652,17 +674,38 @@ def domain_preferred_model(domain: str) -> str:
         "structural":   "claude",  # Claude for deep analytical reasoning
         "strategy":     "claude",
         "writing":      "claude",
+        "design":       "claude",
         "hockey":       "claude",
         "business_ops": "claude",
         "default":      "claude",
     }.get(domain, "claude")
 
 
-def build_expert_system(prompt: str, context_block: str = "") -> tuple:
+def resolve_domain_override(domain_override: Optional[str]) -> Optional[str]:
+    if not domain_override:
+        return None
+    value = domain_override.strip().lower().replace("-", "_")
+    alias_map = {
+        "core": None,
+        "general": "default",
+        "arch": "architecture",
+        "graphic_design": "design",
+        "graphic": "design",
+        "brand": "design",
+    }
+    resolved = alias_map.get(value, value)
+    if resolved is None:
+        return None
+    if resolved not in EXPERT_PERSONAS:
+        raise HTTPException(status_code=400, detail=f"Unknown domain override: {domain_override}")
+    return resolved
+
+
+def build_expert_system(prompt: str, context_block: str = "", domain_override: Optional[str] = None) -> tuple:
     """Build the full system prompt using expert domain routing.
     Returns (system_prompt, domain_key).
     """
-    domain  = detect_domain(prompt)
+    domain  = resolve_domain_override(domain_override) or detect_domain(prompt)
     persona = EXPERT_PERSONAS[domain]
     system  = persona
     if context_block:
@@ -1095,6 +1138,7 @@ _executor = ThreadPoolExecutor(max_workers=8)
 class OrchestrateRequest(BaseModel):
     prompt: str
     model:  str = "auto"
+    domain_override: Optional[str] = None
 
 async def _call_agent_async(domain: str, sub_prompt: str, context_block: str) -> dict:
     """Run one domain agent in a thread so agents execute in parallel."""
@@ -1156,7 +1200,7 @@ async def orchestrate(req: OrchestrateRequest, api_key: Optional[str] = Security
 
     if not decomp.get("multi_domain") or len(tasks) < 2:
         # Single domain - use normal dispatch
-        system, domain = build_expert_system(req.prompt, context_block)
+        system, domain = build_expert_system(req.prompt, context_block, req.domain_override)
         try:
             response, model_used = dispatch(req.model, domain, system, req.prompt)
         except HTTPException:
@@ -1329,7 +1373,7 @@ async def run(request: RunRequest, api_key: Optional[str] = Security(api_key_hea
     context_block = build_context_block(snapshots, drive_context, request.prompt)
 
     # 2. Expert domain routing — picks persona + preferred model
-    system, domain = build_expert_system(request.prompt, context_block)
+    system, domain = build_expert_system(request.prompt, context_block, request.domain_override)
 
     # 3. Dispatch to model (domain-aware auto-routing)
     model_req = request.model or "auto"

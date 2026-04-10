@@ -139,6 +139,71 @@
   .sidebar-section.collapsed .sidebar-section-body { display: none; }
   .sidebar-label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 
+  .studio-grid {
+    display: grid;
+    gap: 10px;
+  }
+  .studio-card {
+    width: 100%;
+    text-align: left;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+  }
+  .studio-card:hover { border-color: rgba(0,229,207,0.28); transform: translateY(-1px); }
+  .studio-card.active {
+    border-color: rgba(0,229,207,0.42);
+    background: linear-gradient(180deg, rgba(0,229,207,0.11), rgba(0,229,207,0.03));
+    box-shadow: inset 0 0 0 1px rgba(0,229,207,0.08);
+  }
+  .studio-card.launch {
+    background: linear-gradient(180deg, rgba(245,148,10,0.1), rgba(245,148,10,0.02));
+    border-color: rgba(245,148,10,0.24);
+  }
+  .studio-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .studio-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .studio-icon {
+    font-size: 13px;
+    opacity: 0.95;
+  }
+  .studio-desc {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .studio-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--muted);
+  }
+  .studio-card.active .studio-pill {
+    color: var(--cyan);
+    border-color: rgba(0,229,207,0.28);
+    background: rgba(0,229,207,0.08);
+  }
+
   /* Model Selector */
   .model-grid {
     display: grid;
@@ -609,6 +674,53 @@
   <!-- ── LEFT SIDEBAR ── -->
   <aside class="sidebar">
 
+    <!-- Studios -->
+    <div class="sidebar-section" id="sidebarSection-studios">
+      <button class="sidebar-section-header" onclick="toggleSidebarSection('studios')">
+        <span class="sidebar-section-title">
+          <span>Studios</span>
+          <span id="studioStatus" class="sidebar-section-meta"></span>
+        </span>
+        <span class="sidebar-chevron">▾</span>
+      </button>
+      <div class="sidebar-section-body">
+        <div class="studio-grid" id="studioGrid">
+          <button class="studio-card active" id="studioCard-core" onclick="selectSubApp('core')">
+            <div class="studio-head">
+              <span class="studio-name">Irving Core</span>
+              <span class="studio-icon">◎</span>
+            </div>
+            <div class="studio-desc">General strategy, research, writing, operations, and cross-domain work.</div>
+            <span class="studio-pill">Primary</span>
+          </button>
+          <button class="studio-card" id="studioCard-architecture" onclick="selectSubApp('architecture')">
+            <div class="studio-head">
+              <span class="studio-name">Architecture / CAD</span>
+              <span class="studio-icon">⌂</span>
+            </div>
+            <div class="studio-desc">PeakHinge design review, technical drawings, FreeCAD, and buildable geometry.</div>
+            <span class="studio-pill">Studio</span>
+          </button>
+          <button class="studio-card" id="studioCard-design" onclick="selectSubApp('design')">
+            <div class="studio-head">
+              <span class="studio-name">Graphic Design Team</span>
+              <span class="studio-icon">◧</span>
+            </div>
+            <div class="studio-desc">Brand systems, campaign visuals, deck direction, layouts, and creative reviews.</div>
+            <span class="studio-pill">Studio</span>
+          </button>
+          <button class="studio-card launch" id="studioCard-content" onclick="openContentPipelineApp()">
+            <div class="studio-head">
+              <span class="studio-name">Content Pipeline</span>
+              <span class="studio-icon">↗</span>
+            </div>
+            <div class="studio-desc">Launch the separate CMS pipeline app for idea-to-post workflow and prompt generation.</div>
+            <span class="studio-pill">External App</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Model Selector -->
     <div class="sidebar-section" id="sidebarSection-model">
       <button class="sidebar-section-header" onclick="toggleSidebarSection('model')">
@@ -829,6 +941,7 @@ if (storedServer) {
 }
 const SERVER = storedServer || DEFAULT_SERVER;
 const FREECAD_BRIDGE = (localStorage.getItem('irving_freecad_bridge_url') || 'http://127.0.0.1:8765').replace(/\/$/, '');
+const DEFAULT_CONTENT_PIPELINE_URL = 'http://127.0.0.1:5005';
 let selectedModel = 'auto';
 let isLoading = false;
 let attachedFiles = [];   // { name, type, content, dataUrl }
@@ -844,8 +957,35 @@ const AUTO_SNAPSHOT_KEY = 'irving_auto_snapshot';
 const API_KEY_STORAGE = 'irving_api_key';
 const USER_KEY = 'irving_user_id';
 const SIDEBAR_SECTION_KEY_PREFIX = 'irving_sidebar_section_';
+const STUDIO_KEY = 'irving_selected_studio';
+const CONTENT_PIPELINE_KEY = 'irving_content_pipeline_url';
 const MAX_TURNS = 10;
 const CTX_CHARS = 8000;
+const STUDIO_CONFIG = {
+  core: {
+    label: 'Irving Core',
+    status: 'Core',
+    placeholder: 'Ask anything across your domains…',
+    welcome: 'Multi-model AI with live Notion and Drive context. Auto-routing picks the best model for every prompt — or choose manually.',
+    promptPrefix: '',
+  },
+  architecture: {
+    label: 'Architecture / CAD',
+    status: 'CAD',
+    placeholder: 'Describe the geometry, drawing, model, or buildability problem you need solved…',
+    welcome: 'Architecture and CAD studio active. Use this for PeakHinge, technical drawings, FreeCAD, and buildable geometry.',
+    promptPrefix: 'Treat this request as architecture, structural design, CAD drafting, FreeCAD, technical drawing, and buildable geometry unless Daniel explicitly asks to leave this studio.',
+  },
+  design: {
+    label: 'Graphic Design Team',
+    status: 'Design',
+    placeholder: 'Describe the brand system, deck, layout, or campaign asset you need…',
+    welcome: 'Graphic design studio active. Use this for brand systems, art direction, decks, campaigns, and visual language.',
+    promptPrefix: 'Treat this request as graphic design, brand identity, visual direction, presentation design, layout, typography, and campaign creative unless Daniel explicitly asks to leave this studio.',
+  },
+};
+let selectedSubApp = localStorage.getItem(STUDIO_KEY) || 'core';
+if (!STUDIO_CONFIG[selectedSubApp]) selectedSubApp = 'core';
 
 function loadOrCreateUserId() {
   let value = (localStorage.getItem(USER_KEY) || '').trim();
@@ -1167,7 +1307,7 @@ function toggleSidebarSection(sectionId) {
 }
 
 function restoreSidebarSections() {
-  ['model', 'options', 'prompts', 'history'].forEach(sectionId => {
+  ['studios', 'model', 'options', 'prompts', 'history'].forEach(sectionId => {
     let stored = null;
     try { stored = localStorage.getItem(`${SIDEBAR_SECTION_KEY_PREFIX}${sectionId}`); } catch {}
     if (sectionId === 'history' && stored === null) {
@@ -1271,6 +1411,64 @@ const MODEL_HINTS = {
   gemini: '🟣 Gemini 1.5 Pro — research, lookup, synthesis',
 };
 
+function getStudioConfig() {
+  return STUDIO_CONFIG[selectedSubApp] || STUDIO_CONFIG.core;
+}
+
+function syncStudioUi() {
+  const cfg = getStudioConfig();
+  document.querySelectorAll('.studio-card[id^="studioCard-"]').forEach(card => {
+    if (card.classList.contains('launch')) return;
+    const studioId = card.id.replace('studioCard-', '');
+    card.classList.toggle('active', studioId === selectedSubApp);
+  });
+  const status = document.getElementById('studioStatus');
+  if (status) {
+    status.textContent = cfg.status;
+    status.title = cfg.label;
+  }
+  const ta = document.getElementById('promptInput');
+  if (ta) {
+    ta.placeholder = cfg.placeholder;
+    handleInput(ta);
+  }
+  const welcome = document.getElementById('welcomeState');
+  if (welcome) {
+    const title = welcome.querySelector('h2') || welcome.querySelector('.welcome-title');
+    const body = welcome.querySelector('p') || welcome.querySelector('.welcome-sub');
+    if (title) title.textContent = selectedSubApp === 'core' ? 'Ready, Daniel.' : `${cfg.label} ready.`;
+    if (body) body.textContent = cfg.welcome;
+  }
+}
+
+function selectSubApp(studioId) {
+  if (!STUDIO_CONFIG[studioId]) return;
+  selectedSubApp = studioId;
+  try { localStorage.setItem(STUDIO_KEY, studioId); } catch {}
+  syncStudioUi();
+  loadContextPrompts();
+  showToast(`${getStudioConfig().label} active`);
+}
+
+function openContentPipelineApp() {
+  const target = (localStorage.getItem(CONTENT_PIPELINE_KEY) || DEFAULT_CONTENT_PIPELINE_URL).trim() || DEFAULT_CONTENT_PIPELINE_URL;
+  window.open(target, '_blank', 'noopener');
+  showToast('Opening Content Pipeline');
+}
+
+function applyStudioPrompt(rawPrompt) {
+  const prompt = (rawPrompt || '').trim();
+  const cfg = getStudioConfig();
+  if (!cfg.promptPrefix) return prompt;
+  return `STUDIO MODE: ${cfg.label}\n${cfg.promptPrefix}\n\nUSER REQUEST:\n${prompt || 'Please review the attached file(s) above.'}`;
+}
+
+function getStudioDomainOverride() {
+  if (selectedSubApp === 'architecture') return 'architecture';
+  if (selectedSubApp === 'design') return 'design';
+  return null;
+}
+
 function setModel(m) {
   selectedModel = m;
   document.querySelectorAll('.model-btn').forEach(b => {
@@ -1361,7 +1559,7 @@ async function sendMessage() {
   const filesSnapshot = [...attachedFiles];
   const fileCtx       = buildFileContext();
   const convCtx       = buildConversationContext();
-  const fullPrompt    = convCtx + fileCtx + (rawPrompt || 'Please review the attached file(s) above.');
+  const fullPrompt    = convCtx + fileCtx + applyStudioPrompt(rawPrompt || 'Please review the attached file(s) above.');
 
   // What to display in chat (clean — no base64)
   const fileNames = filesSnapshot.map(f => `${fileIcon(f.type)} ${f.name}`).join('  ');
@@ -1395,6 +1593,7 @@ async function sendMessage() {
   const cadMode = detectCadMode(rawPrompt);
   const start = Date.now();
   let agentPanelId = null;
+  const domainOverride = getStudioDomainOverride();
 
   const body = cadMode ? {
     prompt,
@@ -1404,6 +1603,7 @@ async function sendMessage() {
     prompt,
     model: selectedModel,
     store_to_drive: document.getElementById('driveToggle').checked,
+    domain_override: domainOverride,
   };
   const endpoint = cadMode ? cadMode.endpoint : (orchestrate ? '/orchestrate' : '/run');
   const timeout  = cadMode ? 180000 : (orchestrate ? 180000 : 120000);
@@ -1709,6 +1909,7 @@ function newChat() {
   scheduleHistorySync();
   const msgEl = document.getElementById('messages');
   msgEl.innerHTML = '<div id="welcomeState" class="welcome-state"><div class="welcome-title">Irving Insights</div><div class="welcome-sub">Ready, Daniel. New conversation.</div></div>';
+  syncStudioUi();
   renderHistory();
   document.getElementById('promptInput').focus();
 }
@@ -1821,6 +2022,7 @@ const domainLabels = {
   hockey:       '🏑 Field Hockey',
   business_ops: '⚙️ Business Ops',
   health:       '💪 Health',
+  design:       '◧ Graphic Design',
   code:         '💻 Code',
   cad:          '📐 AutoCAD / CAD',
 };
@@ -1871,7 +2073,47 @@ function makeQBtn(icon, label, prompt) {
     `<span class="qicon">${icon}</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;">${label}</span></button>`;
 }
 
-async function loadContextPrompts() {
+function buildStudioQuickPrompts() {
+  if (selectedSubApp === 'architecture') {
+    return `<div class="qp-section-divider">Architecture / CAD</div>` +
+      makeQBtn('🏠', 'Architectural concept review',
+        `Act as an architectural design expert. Review this building idea for layout logic, circulation, envelope concept, and buildability. Tell me what is elegant, what is awkward, and what should be revised before moving into detailed drawing.`) +
+      makeQBtn('📐', 'Generate CAD drawing script',
+        `Using my current PeakHinge project context as ground truth, generate an AutoCAD script (.scr) for the actual PeakHinge tri-fold system. Include a legible floor plan, front elevation, and side elevation with meaningful hinge, cassette, and ridge geometry on separate AIA-style layers. Do not fall back to a generic A-frame sketch. Explain exactly how to run it in AutoCAD.`) +
+      makeQBtn('🧱', 'Generate FreeCAD macro',
+        `Using my current PeakHinge project context as ground truth, generate a FreeCAD macro for the actual PeakHinge tri-fold system. Model the paired rafter panels, knee walls, plinth cassette, ridge pipe axis, and loft-related geometry for the locked PH-144 dimensions. Do not return a generic massing model or placeholder boxes. Return build_model(doc) and explain FCStd and STEP export.`);
+  }
+  if (selectedSubApp === 'design') {
+    return `<div class="qp-section-divider">Graphic Design Team</div>` +
+      makeQBtn('◧', 'Brand direction sprint',
+        `Act as my senior graphic design team. Build three distinct visual directions for this brand or offer. For each direction, define audience fit, typography, color system, imagery style, layout behavior, and what would make it feel premium rather than generic.`) +
+      makeQBtn('🖹', 'Deck system design',
+        `Act as a presentation design lead. Turn this idea into a sharp deck system: narrative arc, slide types, hierarchy rules, typography, chart treatment, image treatment, and page-level layout guidance. Be opinionated about what to cut.`) +
+      makeQBtn('✦', 'Campaign asset kit',
+        `Act as an art director. Design a campaign asset system for this offer: hero concept, social tiles, one-pager, email/header treatments, and reusable layout rules. Specify palette, type, composition, and how to keep the system coherent across formats.`);
+  }
+  return `<div class="qp-section-divider">Right now</div>` +
+    makeQBtn('🎯', 'What should I focus on right now?',
+      `Looking across all my active projects and their current state, what single action right now has the highest leverage? Be specific — name the project, the exact next step, and why it matters most.`) +
+    makeQBtn('📊', '80/20 this week',
+      `Apply the 80/20 rule across all my domains. What is the 20% of work that will drive 80% of results this week? Give me a ranked list with reasoning.`) +
+    makeQBtn('🔥', 'What is at risk?',
+      `What in my current work is most at risk of stalling or being dropped? Identify the specific blockers and give me concrete actions to address them.`);
+}
+
+function buildOfflineQuickPrompts() {
+  if (selectedSubApp === 'architecture' || selectedSubApp === 'design') {
+    return buildStudioQuickPrompts();
+  }
+  return makeQBtn('🎯', 'What should I focus on right now?',
+      `What is the single highest-leverage thing I should be working on right now?`) +
+    makeQBtn('📊', '80/20 this week',
+      `Apply the 80/20 rule across my active projects. What is the 20% that drives 80% of results this week?`) +
+    makeQBtn('🔥', 'What is at risk?',
+      `What in my current work is most at risk of stalling? Name the blockers and the actions to address them.`);
+}
+
+async function loadContextPromptsLegacy() {
   const list   = document.getElementById('quickPromptsList');
   const status = document.getElementById('qpStatus');
 
@@ -1893,7 +2135,44 @@ async function loadContextPrompts() {
     const data = await res.json();
     const snaps = data.snapshots || [];
 
-    let html = '';
+    let html = buildStudioQuickPrompts();
+    // Studio-aware prompts supersede the older generic prompt set below.
+    if (selectedSubApp) {
+      if (snaps.length > 0) {
+        html += `<div class="qp-section-divider">From your projects</div>`;
+
+        for (const snap of snaps) {
+          const icon      = snapIcon(snap.name);
+          const shortName = shortProjectName(snap.name);
+          const nextMove  = firstSentence(snap.recommended_next_moves || snap.top_3_priorities || '');
+          const stateSnip = (snap.current_state || '').substring(0, 300);
+          const movesSnip = (snap.recommended_next_moves || '').substring(0, 300);
+          const riskSnip  = (snap.risks_blockers || '').substring(0, 150);
+
+          if (!nextMove) continue;
+
+          const label = `${shortName}: ${nextMove.length > 42 ? nextMove.substring(0,42)+'…' : nextMove}`;
+          const prompt = `Project: ${snap.name}\n\nCurrent state: ${stateSnip}\n\nRecommended next move: ${movesSnip}${riskSnip ? '\n\nRisks/blockers: ' + riskSnip : ''}\n\nHelp me execute this next move. What should I do first, and what's the fastest path to progress today?`;
+
+          html += makeQBtn(icon, label, prompt);
+        }
+
+        const projectList = snaps.map(s => shortProjectName(s.name)).join(', ');
+        html += `<div class="qp-section-divider">Across all</div>`;
+        html += makeQBtn('⚡', 'Where are the blockers?',
+          `Across ${projectList}: which project has the most critical unresolved blocker right now, and what is the single action that would unblock it?`);
+      }
+
+      list.innerHTML = html;
+      if (snaps.length > 0) {
+        status.textContent = `${snaps.length} live`;
+        status.title = `Quick prompts loaded from Notion context snapshots for ${getStudioConfig().label}`;
+      } else {
+        status.textContent = getStudioConfig().status;
+        status.title = `Studio quick prompts for ${getStudioConfig().label}`;
+      }
+      return;
+    }
 
     // ── Always-present cross-domain prompt ──
     html += `<div class="qp-section-divider">Right now</div>`;
@@ -1962,6 +2241,69 @@ async function loadContextPrompts() {
 }
 
 // ── INIT ────────────────────────────────────────────────
+async function loadContextPrompts() {
+  const list   = document.getElementById('quickPromptsList');
+  const status = document.getElementById('qpStatus');
+
+  try {
+    const res  = await fetch(`${SERVER}/context`, {
+      headers: apiHeaders(false),
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const errData = await res.json();
+        detail = errData.detail || errData.error || detail;
+      } catch {}
+      const err = new Error(detail);
+      err.status = res.status;
+      throw err;
+    }
+
+    const data = await res.json();
+    const snaps = data.snapshots || [];
+    let html = buildStudioQuickPrompts();
+
+    if (snaps.length > 0) {
+      html += `<div class="qp-section-divider">From your projects</div>`;
+
+      for (const snap of snaps) {
+        const icon      = snapIcon(snap.name);
+        const shortName = shortProjectName(snap.name);
+        const nextMove  = firstSentence(snap.recommended_next_moves || snap.top_3_priorities || '');
+        const stateSnip = (snap.current_state || '').substring(0, 300);
+        const movesSnip = (snap.recommended_next_moves || '').substring(0, 300);
+        const riskSnip  = (snap.risks_blockers || '').substring(0, 150);
+
+        if (!nextMove) continue;
+
+        const label = `${shortName}: ${nextMove.length > 42 ? nextMove.substring(0,42)+'…' : nextMove}`;
+        const prompt = `Project: ${snap.name}\n\nCurrent state: ${stateSnip}\n\nRecommended next move: ${movesSnip}${riskSnip ? '\n\nRisks/blockers: ' + riskSnip : ''}\n\nHelp me execute this next move. What should I do first, and what's the fastest path to progress today?`;
+        html += makeQBtn(icon, label, prompt);
+      }
+
+      const projectList = snaps.map(s => shortProjectName(s.name)).join(', ');
+      html += `<div class="qp-section-divider">Across all</div>`;
+      html += makeQBtn('⚡', 'Where are the blockers?',
+        `Across ${projectList}: which project has the most critical unresolved blocker right now, and what is the single action that would unblock it?`);
+    }
+
+    list.innerHTML = html;
+    if (snaps.length > 0) {
+      status.textContent = `${snaps.length} live`;
+      status.title = `Quick prompts loaded from Notion context snapshots for ${getStudioConfig().label}`;
+    } else {
+      status.textContent = getStudioConfig().status;
+      status.title = `Studio quick prompts for ${getStudioConfig().label}`;
+    }
+  } catch (e) {
+    list.innerHTML = buildOfflineQuickPrompts();
+    status.textContent = 'offline';
+    status.title = `Offline studio prompts for ${getStudioConfig().label}`;
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('promptInput').focus();
   document.getElementById('autoSweepToggle').checked = localStorage.getItem(AUTO_SWEEP_KEY) === '1';
@@ -1984,6 +2326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   restoreSidebarSections();
+  syncStudioUi();
 
   // Show memory indicator if context exists
   if (conversationMemory.length > 0) {
