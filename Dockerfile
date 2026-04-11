@@ -11,4 +11,4 @@ RUN pip install --no-cache-dir -r requirements-irving-mvp.txt
 
 COPY . .
 
-CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8080} --timeout 300 --graceful-timeout 30 --keep-alive 75 -k uvicorn.workers.UvicornWorker irving_mvp_server:app"]
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8080} --timeout 300 --graceful-timeout 30 --keep-alive 75 -k uvicorn.workers.UvicornWorker main:app"]
