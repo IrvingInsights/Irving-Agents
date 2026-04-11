@@ -810,7 +810,7 @@
               <span class="studio-name">Irving Core</span>
               <span class="studio-icon">C</span>
             </div>
-            <div class="studio-desc">General strategy, research, writing, operations, and cross-domain work.</div>
+            <div class="studio-desc">All domains · Chief of staff</div>
             <span class="studio-pill">Primary</span>
           </button>
           <button class="studio-card" id="studioCard-architecture" onclick="selectSubApp('architecture')">
@@ -818,15 +818,16 @@
               <span class="studio-name">Architecture / CAD</span>
               <span class="studio-icon">A</span>
             </div>
-            <div class="studio-desc">PeakHinge design review, technical drawings, FreeCAD, and buildable geometry.</div>
+            <div class="studio-desc">Design, structure, drawings</div>
             <span class="studio-pill">Studio</span>
+            <span id="freecadBridgeBadge" style="display:none;font-size:9px;color:#e05555;background:rgba(224,85,85,0.12);border-radius:3px;padding:1px 5px;margin-top:4px;">FreeCAD offline</span>
           </button>
           <button class="studio-card" id="studioCard-design" onclick="selectSubApp('design')">
             <div class="studio-head">
               <span class="studio-name">Graphic Design Team</span>
               <span class="studio-icon">D</span>
             </div>
-            <div class="studio-desc">Brand systems, campaign visuals, deck direction, layouts, and creative reviews.</div>
+            <div class="studio-desc">Visual, brand, campaigns</div>
             <span class="studio-pill">Studio</span>
           </button>
           <button class="studio-card" id="studioCard-content" onclick="selectSubApp('content')">
@@ -834,7 +835,7 @@
               <span class="studio-name">Content Team</span>
               <span class="studio-icon">T</span>
             </div>
-            <div class="studio-desc">Idea shaping, hooks, posts, campaigns, newsletters, and platform-specific content systems.</div>
+            <div class="studio-desc">Writing, social, editorial</div>
             <span class="studio-pill">Studio</span>
           </button>
         </div>
@@ -883,7 +884,7 @@
             Multi-Agent
             <span style="font-size:9px;background:rgba(245,148,10,0.15);color:var(--orange);padding:1px 5px;border-radius:4px;font-weight:700;">BETA</span>
           </div>
-          <div class="toggle-sub">Parallel specialist agents + synthesis</div>
+          <div class="toggle-sub">Parallel specialists (slower)</div>
         </div>
         <label class="toggle">
           <input type="checkbox" id="orchestrateToggle">
@@ -893,7 +894,7 @@
       <div class="toggle-row" style="margin-top:6px;">
         <div>
           <div class="toggle-label">Auto Sweep</div>
-          <div class="toggle-sub">Push actionable items to Review Queue</div>
+          <div class="toggle-sub">Extract action items after each reply</div>
         </div>
         <label class="toggle">
           <input type="checkbox" id="autoSweepToggle">
@@ -903,7 +904,7 @@
       <div class="toggle-row" style="margin-top:6px;">
         <div>
           <div class="toggle-label">Auto Snapshot</div>
-          <div class="toggle-sub">Save the latest exchange to Context Snapshots</div>
+          <div class="toggle-sub">Save context snapshot on clear</div>
         </div>
         <label class="toggle">
           <input type="checkbox" id="autoSnapshotToggle">
@@ -930,6 +931,7 @@
       </div>
     </div>
 
+    <div id="sidebarContextStatus" style="padding:5px 10px 8px;font-size:9px;color:var(--muted);border-top:1px solid var(--border);letter-spacing:0.03em;display:none;"></div>
   </aside>
 
   <!-- ── CHAT AREA ── -->
@@ -1014,8 +1016,8 @@
         <span class="char-count" id="charCount"></span>
       </div>
       <div class="ops-bar">
-        <button class="ops-btn" onclick="manualSweep()">Sweep Last Reply</button>
-        <button class="ops-btn" onclick="manualSnapshot()">Snapshot Chat</button>
+        <button class="ops-btn" onclick="manualSweep()">Extract to Notion</button>
+        <button class="ops-btn" onclick="manualSnapshot()">Save Snapshot</button>
         <button class="ops-btn subtle" onclick="clearMemory()">Clear Context</button>
       </div>
     </div>
@@ -2340,6 +2342,27 @@ function buildOfflineQuickPrompts() {
 }
 
 // ── INIT ────────────────────────────────────────────────
+// FreeCAD bridge — shows offline badge in Architecture card when bridge unreachable
+async function checkFreecadBridgeStatus() {
+  const badge = document.getElementById('freecadBridgeBadge');
+  if (!badge) return;
+  try {
+    const res = await fetch(`${FREECAD_BRIDGE}/health`, { signal: AbortSignal.timeout(3000) });
+    badge.style.display = res.ok ? 'none' : 'inline';
+  } catch {
+    badge.style.display = 'inline';
+  }
+}
+
+// Sidebar context status line
+function updateSidebarContextStatus(snapCount, driveOn) {
+  const el = document.getElementById('sidebarContextStatus');
+  if (!el) return;
+  const snapLabel = snapCount > 0 ? `${snapCount} snapshot${snapCount !== 1 ? 's' : ''}` : 'no snapshots';
+  const driveLabel = driveOn ? 'Drive: on' : 'Drive: off';
+  el.textContent = `Context: ${snapLabel} \u00B7 ${driveLabel}`;
+  el.style.display = 'block';
+}
 async function loadContextPrompts() {
   const list   = document.getElementById('quickPromptsList');
   const status = document.getElementById('qpStatus');
@@ -2362,6 +2385,7 @@ async function loadContextPrompts() {
 
     const data = await res.json();
     const snaps = data.snapshots || [];
+    updateSidebarContextStatus(snaps.length, document.getElementById('driveToggle')?.checked);
     let html = buildStudioQuickPrompts();
 
     if (snaps.length > 0) {
@@ -2398,6 +2422,7 @@ async function loadContextPrompts() {
     }
   } catch (e) {
     list.innerHTML = buildOfflineQuickPrompts();
+    updateSidebarContextStatus(0, document.getElementById('driveToggle')?.checked);
     status.textContent = 'offline';
     status.title = `Offline studio prompts for ${getStudioConfig().label}`;
   }
@@ -2434,6 +2459,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast(`${turns} prior turn${turns !== 1 ? 's' : ''} in context`);
   }
 
+  checkFreecadBridgeStatus();
   // Load context-driven quick prompts
   loadContextPrompts();
 });
