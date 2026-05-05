@@ -71,6 +71,9 @@ Minimum fields to fill:
 
 Optional:
 
+- `CLAUDE_MODEL`
+- `OPENAI_MODEL`
+- `GEMINI_MODEL`
 - `IRVING_API_KEY`
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
 - `DRIVE_OUTPUT_FOLDER_ID`

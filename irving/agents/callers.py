@@ -11,7 +11,14 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
-from irving.config import ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY
+from irving.config import (
+    ANTHROPIC_API_KEY,
+    CLAUDE_MODEL,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    OPENAI_API_KEY,
+    OPENAI_MODEL,
+)
 from irving.agents.routing import domain_preferred_model
 
 logger = logging.getLogger(__name__)
@@ -26,7 +33,7 @@ def call_claude(system: str, prompt: str) -> str:
         import anthropic
         client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
-            model="claude-opus-4-6",
+            model=CLAUDE_MODEL,
             max_tokens=8192,
             system=system,
             messages=[{"role": "user", "content": prompt}],
@@ -44,7 +51,7 @@ def call_gpt(system: str, prompt: str) -> str:
         from openai import OpenAI
         client   = OpenAI(api_key=OPENAI_API_KEY)
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL,
             max_tokens=8192,
             messages=[
                 {"role": "system", "content": system},
@@ -63,7 +70,7 @@ def call_gemini(system: str, prompt: str) -> str:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
-        model    = genai.GenerativeModel("gemini-1.5-pro", system_instruction=system)
+        model    = genai.GenerativeModel(GEMINI_MODEL, system_instruction=system)
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
@@ -80,16 +87,16 @@ def dispatch(model_req: str, domain: str, system: str, prompt: str) -> tuple[str
     resolved = domain_preferred_model(domain) if model_req == "auto" else model_req
     try:
         if resolved == "gpt":
-            return call_gpt(system, prompt), "gpt-4o"
+            return call_gpt(system, prompt), OPENAI_MODEL
         elif resolved == "gemini":
-            return call_gemini(system, prompt), "gemini-1.5-pro"
+            return call_gemini(system, prompt), GEMINI_MODEL
         else:
-            return call_claude(system, prompt), "claude-opus-4-6"
+            return call_claude(system, prompt), CLAUDE_MODEL
     except RuntimeError as primary_err:
-        logger.warning(f"Primary model ({resolved}) failed: {primary_err}. Falling back to GPT-4o.")
+        logger.warning(f"Primary model ({resolved}) failed: {primary_err}. Falling back to {OPENAI_MODEL}.")
         if resolved != "gpt" and OPENAI_API_KEY:
             try:
-                return call_gpt(system, prompt), "gpt-4o (fallback)"
+                return call_gpt(system, prompt), f"{OPENAI_MODEL} (fallback)"
             except Exception as fallback_err:
                 logger.error(f"Fallback also failed: {fallback_err}")
                 raise HTTPException(
