@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dan's Recovery Dashboard</title>
+  <style>
+    :root {
+      --bg: #f4f1eb;
+      --card: #fffdf8;
+      --ink: #18302b;
+      --muted: #66736f;
+      --line: #d9dfda;
+      --green: #176b56;
+      --light-green: #dff1e8;
+      --amber: #a85b08;
+      --light-amber: #fff0d8;
+      --red: #a83b32;
+      --light-red: #fce5e2;
+      --blue: #2d5e86;
+      --shadow: 0 12px 32px rgba(24, 48, 43, .08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; min-width: 280px; overflow-x: hidden; font: 15px/1.45 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    a { color: var(--blue); overflow-wrap: anywhere; }
+    header { padding: clamp(22px, 4vw, 42px) clamp(18px, 5vw, 72px); background: linear-gradient(135deg, var(--ink), #245d50); color: white; }
+    header h1 { margin: 0 0 6px; max-width: 900px; font-size: clamp(27px, 4vw, 48px); line-height: 1.08; letter-spacing: -.035em; }
+    header p { max-width: 900px; margin: 0; color: #c9d9d4; }
+    nav { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: thin; padding: 12px clamp(18px, 5vw, 72px); background: rgba(255,255,255,.96); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; backdrop-filter: blur(12px); }
+    nav button { min-height: 42px; border: 0; border-radius: 999px; padding: 9px 15px; background: #edf1ef; color: var(--ink); white-space: nowrap; font-weight: 700; }
+    nav button.active { background: var(--green); color: white; }
+    main { max-width: 1320px; margin: auto; padding: 22px clamp(14px, 4vw, 48px) 60px; }
+    section { display: none; }
+    section.active { display: block; }
+    .grid { display: grid; gap: 16px; }
+    .stats { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    .two { grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); }
+    .card { min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: var(--shadow); }
+    .stat strong { display: block; font-size: 30px; letter-spacing: -.04em; }
+    .stat span, .muted { color: var(--muted); }
+    h2 { margin: 6px 0 18px; font-size: 27px; }
+    h3 { margin: 0 0 12px; font-size: 18px; }
+    h4 { margin: 18px 0 7px; }
+    .alert { border-left: 5px solid var(--amber); background: var(--light-amber); padding: 13px 15px; border-radius: 10px; margin-bottom: 16px; }
+    .danger { border-color: var(--red); background: var(--light-red); }
+    .ok { border-color: var(--green); background: var(--light-green); }
+    .tag { display: inline-block; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 700; background: #e9efec; }
+    .tag.warn { color: var(--amber); background: var(--light-amber); }
+    .tag.bad { color: var(--red); background: var(--light-red); }
+    .tag.good { color: var(--green); background: var(--light-green); }
+    ul.clean { padding: 0; margin: 0; list-style: none; }
+    ul.clean li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    ul.clean li:last-child { border-bottom: 0; }
+    label.check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+    input[type=checkbox] { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 1px; accent-color: var(--green); }
+    table { width: 100%; border-collapse: collapse; min-width: 650px; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+    .scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; border-radius: 10px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; border: 0; border-radius: 10px; background: var(--green); color: white; padding: 9px 13px; font-weight: 700; text-align: center; text-decoration: none; }
+    .btn.secondary { background: #e9efec; color: var(--ink); }
+    .btn.danger-btn { background: var(--red); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .field { display: grid; gap: 5px; margin: 9px 0; }
+    .field label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+    input, select, textarea { width: 100%; min-height: 44px; border: 1px solid #bdc9c4; border-radius: 9px; padding: 9px; background: white; color: var(--ink); }
+    textarea { min-height: 74px; resize: vertical; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+    .bar { height: 12px; background: #e1e7e4; border-radius: 999px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: var(--green); }
+    .connection { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .connection:last-child { border: 0; }
+    .small { font-size: 12px; }
+    footer { color: var(--muted); padding-top: 22px; }
+    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid rgba(45,94,134,.35); outline-offset: 2px; }
+
+    @media (min-width: 1100px) {
+      .stats { grid-template-columns: repeat(4, 1fr); }
+      .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .card { padding: 21px; }
+    }
+
+    @media (max-width: 720px) {
+      body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); font-size: 14px; }
+      header { padding: 21px 16px 19px; }
+      header h1 { font-size: clamp(27px, 9vw, 37px); }
+      header p { font-size: 13px; line-height: 1.4; }
+      nav {
+        position: fixed;
+        inset: auto 0 0;
+        top: auto;
+        gap: 4px;
+        justify-content: space-between;
+        padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+        border-top: 1px solid var(--line);
+        border-bottom: 0;
+        box-shadow: 0 -8px 28px rgba(24,48,43,.12);
+      }
+      nav button {
+        flex: 1 0 68px;
+        min-width: 68px;
+        min-height: 50px;
+        padding: 6px 5px;
+        border-radius: 12px;
+        font-size: 11px;
+        line-height: 1.15;
+        white-space: normal;
+      }
+      main { padding: 17px 12px 30px; }
+      h2 { margin: 3px 2px 14px; font-size: 23px; line-height: 1.2; }
+      h3 { font-size: 17px; }
+      .grid { gap: 12px; }
+      .two { grid-template-columns: minmax(0, 1fr); }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+      .card { padding: 14px; border-radius: 15px; }
+      .stat strong { font-size: clamp(24px, 8vw, 30px); }
+      .stat span { display: block; line-height: 1.25; }
+      .alert { padding: 12px; border-left-width: 4px; }
+      .form-grid { grid-template-columns: minmax(0, 1fr); }
+      .form-grid .btn { width: 100%; }
+      .connection { align-items: flex-start; flex-wrap: wrap; }
+      table { min-width: 570px; font-size: 13px; }
+      th, td { padding: 9px 8px; }
+      .scroll { margin-right: -4px; padding-bottom: 4px; }
+      .actions .btn { flex: 1 1 180px; }
+      ul.clean li { padding: 11px 0; }
+      footer { font-size: 12px; }
+    }
+
+    @media (max-width: 390px) {
+      .stats { grid-template-columns: minmax(0, 1fr); }
+      nav button { flex-basis: 62px; min-width: 62px; font-size: 10px; }
+      .card { padding: 13px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dan's Recovery Dashboard</h1>
+    <p>Private local tracker · Surgery Thursday, June 11, 2026 · Verify all medication decisions with the care team</p>
+  </header>
+  <nav id="nav"></nav>
+  <main>
+    <section id="today" class="active">
+      <h2>Today &amp; Tomorrow</h2>
+      <div class="alert danger"><strong>Medical safety:</strong> confirm arrival time, fasting instructions, and which regular medications to take or hold. This dashboard does not replace the discharge medication list.</div>
+      <div class="grid stats">
+        <div class="card stat"><span>Official surgery date</span><strong>Jun 11</strong><span>Thursday · Unity Hospital</span></div>
+        <div class="card stat"><span>Meal Train raised</span><strong id="today-mt-raised">$406</strong><span>Gross raised, not bank balance</span></div>
+        <div class="card stat"><span>Known deposits</span><strong>$50.98</strong><span>Only two March deposits found</span></div>
+        <div class="card stat" id="today-slots-card"><span>Open meal dates</span><strong id="today-mt-slots">0</strong><span id="today-mt-slots-sub">All dates booked</span></div>
+      </div>
+      <div class="grid two" style="margin-top:16px">
+        <div class="card"><h3>Tonight's critical checklist</h3><ul id="critical-list" class="clean"></ul></div>
+        <div class="card">
+          <h3>Contacts &amp; arrival</h3>
+          <ul class="clean">
+            <li><strong>Unity Hospital</strong><br>1555 Long Pond Road, Rochester, NY 14626</li>
+            <li><strong>Arrival</strong><br>Park in Surgical Center Lot F; enter main Surgical Center entrance.</li>
+            <li><strong>Unity Surgical Services</strong><br><a href="tel:5857237738">585-723-7738</a></li>
+            <li><strong>Rochester Brain &amp; Spine</strong><br><a href="tel:5853345560">585-334-5560</a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="medications">
+      <h2>Medications</h2>
+      <div class="alert"><strong>Needs reconciliation:</strong> regular medications below came from a Notion record dated August–September 2025. Confirm the active list, doses, and surgery-day hold/take instructions with the care team.</div>
+      <div class="card">
+        <h3>Regular medications</h3>
+        <div class="scroll"><table><thead><tr><th>Medication</th><th>Directions found</th><th>Status</th><th>Notes</th></tr></thead><tbody id="regular-meds"></tbody></table></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Post-surgery prescriptions</h3>
+        <p class="muted">Add the exact prescriptions from tomorrow's discharge paperwork. Do not pre-fill or guess opioid, muscle-relaxer, antibiotic, or stool-softener doses.</p>
+        <form id="med-form" class="form-grid">
+          <input name="name" placeholder="Medication name" required>
+          <input name="dose" placeholder="Dose">
+          <input name="schedule" placeholder="Schedule / as needed">
+          <input name="purpose" placeholder="Purpose">
+          <button class="btn" type="submit">Add prescription</button>
+        </form>
+        <div class="scroll"><table><thead><tr><th>Medication</th><th>Dose</th><th>Schedule</th><th>Purpose</th><th></th></tr></thead><tbody id="post-meds"></tbody></table></div>
+      </div>
+      <div class="alert danger" style="margin-top:16px"><strong>Discharge medication restrictions:</strong> no aspirin, NSAIDs such as Motrin, Advil, Aleve, or ibuprofen, or blood thinners for 6 weeks without office approval. Tylenol limit in the instruction sheet is 4,000 mg/day, but follow the lower limit if your clinician or prescription specifies one.</div>
+    </section>
+
+    <section id="instructions">
+      <h2>Post-Surgery Instructions</h2>
+      <div class="grid two">
+        <div class="card"><h3>Activity</h3><ul id="activity-list" class="clean"></ul></div>
+        <div class="card"><h3>Wound care</h3><ul id="wound-list" class="clean"></ul></div>
+        <div class="card"><h3>Medication &amp; comfort</h3><ul id="comfort-list" class="clean"></ul></div>
+        <div class="card"><h3>Call the office immediately</h3><ul id="redflag-list" class="clean"></ul></div>
+      </div>
+    </section>
+
+    <section id="mealtrain">
+      <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:4px">
+        <h2 style="margin:0">Meal Train &amp; Support</h2>
+        <span id="mt-synced" class="small muted"></span>
+      </div>
+      <div class="alert ok" style="margin-top:14px"><strong>Balance note:</strong> $50.98 is not the available balance — it is only two bank deposits from March. The $406 raised is gross donations; processing fees and pending payouts are not yet deducted. Do not treat the gross figure as spendable cash until you reconcile against the Meal Train ledger.</div>
+      <div class="grid stats">
+        <div class="card stat" id="mt-stat-raised"><span>Gross raised</span><strong id="mt-raised">$406.00</strong><span id="mt-raised-sub">5 donors</span></div>
+        <div class="card stat"><span>Known bank deposits</span><strong>$50.98</strong><span>March 27 + March 30</span></div>
+        <div class="card stat" id="mt-stat-unrec"><span>Unreconciled</span><strong id="mt-unrec">$355.02</strong><span>Pending payout + fees + missing deposits</span></div>
+        <div class="card stat" id="mt-stat-progress"><span>Goal progress</span><strong id="mt-progress-pct">40.6%</strong><div class="bar"><span id="mt-progress-bar" style="width:40.6%"></span></div></div>
+      </div>
+      <div class="grid two" style="margin-top:16px">
+        <div class="card">
+          <h3>Known activity</h3>
+          <ul id="mt-donors" class="clean">
+            <li>Avi Brown · $100</li>
+            <li>Anonymous · $200</li>
+            <li>Anonymous · $50</li>
+            <li>Anonymous · $38</li>
+            <li>Sara Mayer-Fried · $18</li>
+            <li class="muted small">Bank deposits confirmed: $16.28 + $34.70</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Reconciliation tasks</h3>
+          <ul id="money-list" class="clean"></ul>
+          <div class="actions"><a class="btn" href="https://www.mealtrain.com/trains/6y2kwq/" target="_blank" rel="noopener">Open Meal Train</a></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px"><h3>Helpers &amp; thanks</h3><div class="scroll"><table><thead><tr><th>Person</th><th>Help</th><th>Amount</th><th>Thank-you</th></tr></thead><tbody><tr><td>Avi Brown</td><td>Donation</td><td>$100</td><td>Draft ready</td></tr><tr><td>Sara Mayer-Fried</td><td>Organizer + donation</td><td>$18</td><td>Draft ready</td></tr><tr><td>Ellen Simon Irving</td><td>Shared Facebook appeal</td><td>—</td><td>Draft ready</td></tr><tr><td>Anonymous donors</td><td>Donations</td><td>$288 known</td><td>General public thanks</td></tr></tbody></table></div></div>
+    </section>
+
+    <section id="health">
+      <h2>Health Data &amp; Reminders</h2>
+      <div class="alert"><strong>Connection status:</strong> no Google Health Connect, Samsung Health, or GPT Health connector is available in this session. Smartwatch data cannot be continuously synced from here yet.</div>
+      <div class="grid two">
+        <div class="card">
+          <h3>Connections</h3>
+          <div class="connection"><div><strong>Samsung Health</strong><div class="muted small">Import CSV/JSON exports into this dashboard</div></div><span class="tag warn">Not connected</span></div>
+          <div class="connection"><div><strong>Google Health Connect</strong><div class="muted small">Android on-device data broker; no session connector</div></div><span class="tag warn">Not connected</span></div>
+          <div class="connection"><div><strong>GPT Health</strong><div class="muted small">No available connector detected</div></div><span class="tag warn">Unavailable</span></div>
+          <div class="connection"><div><strong>Google Calendar</strong><div class="muted small">Can create popup/email reminders after approval</div></div><span class="tag good">Available</span></div>
+        </div>
+        <div class="card">
+          <h3>Import smartwatch export</h3>
+          <p class="muted">Import a Samsung Health or other wearable CSV/JSON export. Data stays in your browser on this computer.</p>
+          <input id="health-file" type="file" accept=".csv,.json">
+          <div id="health-import-status" class="small muted" style="margin-top:8px">No data imported.</div>
+          <div class="actions"><button id="notify-btn" class="btn" type="button">Enable browser notifications</button></div>
+          <p class="small muted">Browser notifications only work while this dashboard is open. Google Calendar reminders can reach your phone/watch, but creating them requires your approval.</p>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Daily recovery log</h3>
+        <form id="health-form" class="form-grid">
+          <input type="date" name="date" required>
+          <input type="number" name="pain" min="0" max="10" placeholder="Pain 0–10">
+          <input type="number" name="steps" min="0" placeholder="Steps">
+          <input type="number" name="restingHr" min="20" max="250" placeholder="Resting HR">
+          <input type="number" name="sleep" min="0" max="24" step=".1" placeholder="Sleep hours">
+          <input name="notes" placeholder="Notes / symptoms">
+          <button class="btn" type="submit">Save daily log</button>
+        </form>
+        <div class="scroll"><table><thead><tr><th>Date</th><th>Pain</th><th>Steps</th><th>Resting HR</th><th>Sleep</th><th>Notes</th><th></th></tr></thead><tbody id="health-log"></tbody></table></div>
+      </div>
+    </section>
+    <footer>Sources: Google Drive pre-op, CHG wash, surgery letter, and cervical-fusion discharge PDFs; Notion surgery prep, medications, and Meal Train deposits; public Meal Train and Facebook pages. Verify tomorrow's discharge instructions before relying on this tracker.</footer>
+  </main>
+  <script>
+    const tabs = [['today','Today'],['medications','Medications'],['instructions','Post-op'],['mealtrain','Meal Train'],['health','Health & reminders']];
+    const nav = document.querySelector('#nav');
+    tabs.forEach(([id,label], i) => {
+      const b = document.createElement('button'); b.textContent=label; b.className=i===0?'active':'';
+      b.onclick=()=>{document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.querySelector('#'+id).classList.add('active');b.classList.add('active')}; nav.appendChild(b);
+    });
+    const storeKey='dan-recovery-dashboard-v1';
+    const defaults={
+      checks:{},
+      postMeds:[],
+      health:[],
+      regular:[
+        ['Duloxetine','60 mg twice daily'],['Pregabalin','150 mg three times daily'],['Tizanidine','4 mg AM, 4 mg PM, 10 mg bedtime + 2 mg as needed'],['Diclofenac 1% gel','Four times daily to neck/other joints'],['Acetaminophen','500 mg three times daily'],['Esomeprazole','20 mg every morning'],['Atorvastatin','40 mg daily'],['Medical marijuana','As needed'],['Sildenafil','50 mg as needed']
+      ]
+    };
+    let state=Object.assign({},defaults,JSON.parse(localStorage.getItem(storeKey)||'{}'));
+    const save=()=>localStorage.setItem(storeKey,JSON.stringify(state));
+    const checkLists={
+      'critical-list':['Confirm arrival/check-in time','Confirm fasting instructions','Confirm which regular medicines to take or hold','Complete CHG wash exactly as directed','Use clean clothes and clean bed linens','Pack hospital bag','Confirm ride and home support','Charge phone and backup battery'],
+      'activity-list':['Wear collar for 4 weeks; remove to shower, sleep, and eat','Do not lift more than 10 pounds','Avoid strenuous activity','Walk daily and gradually increase distance/time','No driving until 4 weeks post-op, off pain medication, out of neck brace, and able to check blind spots safely','No smoking; it interferes with fusion and healing'],
+      'wound-list':['Remove dressing the day after arriving home','Cover incision with Saran wrap and tape when showering for 1–2 weeks','Let steri-strips fall off on their own after 10–14 days','Do not put lotions, creams, or ointments on incision','No hot tubs, pools, or tub baths for 6–8 weeks'],
+      'comfort-list':['Narcotic pain medicine and muscle relaxer may be prescribed for up to 4 weeks','Use stool softeners for constipation from pain medicine','Heating pad may be used on shoulders for muscle spasms','No aspirin, NSAIDs, or blood thinners for 6 weeks without office approval','Antibiotics required for dental or invasive procedures for 1 year'],
+      'redflag-list':['Fever or chills','Drainage or redness at incision','Severe pain','Difficulty urinating','Difficulty with bowel movements'],
+      'money-list':['Sign into Meal Train and review donation/payout ledger','Record processing fees and payout dates','Match all Meal Train deposits against bank transactions','Do not treat gross raised as spendable balance']
+    };
+    function renderChecks(){
+      Object.entries(checkLists).forEach(([id,items])=>{
+        const el=document.querySelector('#'+id); if(!el)return; el.innerHTML='';
+        items.forEach(text=>{const key=id+'|'+text; const li=document.createElement('li'); li.innerHTML=`<label class="check"><input type="checkbox" ${state.checks[key]?'checked':''}><span>${text}</span></label>`; li.querySelector('input').onchange=e=>{state.checks[key]=e.target.checked;save()};el.appendChild(li)});
+      });
+    }
+    function renderRegular(){
+      document.querySelector('#regular-meds').innerHTML=state.regular.map(([n,d])=>`<tr><td><strong>${n}</strong></td><td>${d}</td><td><span class="tag warn">Verify current</span></td><td>${n==='Diclofenac 1% gel'?'NSAID: ask surgeon whether to hold':''}</td></tr>`).join('');
+    }
+    function renderPostMeds(){
+      document.querySelector('#post-meds').innerHTML=state.postMeds.map((m,i)=>`<tr><td>${m.name}</td><td>${m.dose}</td><td>${m.schedule}</td><td>${m.purpose}</td><td><button class="btn danger-btn" onclick="removeMed(${i})">Remove</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted">No discharge prescriptions entered yet.</td></tr>';
+    }
+    window.removeMed=i=>{state.postMeds.splice(i,1);save();renderPostMeds()};
+    document.querySelector('#med-form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);state.postMeds.push(Object.fromEntries(f));save();e.target.reset();renderPostMeds()};
+    function renderHealth(){
+      document.querySelector('#health-log').innerHTML=state.health.map((x,i)=>`<tr><td>${x.date||''}</td><td>${x.pain||''}</td><td>${x.steps||''}</td><td>${x.restingHr||''}</td><td>${x.sleep||''}</td><td>${x.notes||''}</td><td><button class="btn danger-btn" onclick="removeHealth(${i})">Remove</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">No recovery data logged yet.</td></tr>';
+    }
+    window.removeHealth=i=>{state.health.splice(i,1);save();renderHealth()};
+    document.querySelector('#health-form').onsubmit=e=>{e.preventDefault();state.health.unshift(Object.fromEntries(new FormData(e.target)));save();e.target.reset();renderHealth()};
+    document.querySelector('#health-file').onchange=async e=>{
+      const file=e.target.files[0]; if(!file)return; const text=await file.text();
+      try{
+        const rows=file.name.endsWith('.json')?JSON.parse(text):text.trim().split(/\r?\n/).slice(1).map(r=>{const c=r.split(',');return{date:c[0]||'',steps:c[1]||'',restingHr:c[2]||'',sleep:c[3]||'',pain:'',notes:'Imported wearable data'}});
+        const arr=Array.isArray(rows)?rows:[rows]; state.health=[...arr,...state.health].slice(0,500); save(); renderHealth(); document.querySelector('#health-import-status').textContent=`Imported ${arr.length} record(s) from ${file.name}.`;
+      }catch(err){document.querySelector('#health-import-status').textContent='Import failed. Use JSON array or CSV columns: date, steps, restingHr, sleep.'}
+    };
+    document.querySelector('#notify-btn').onclick=async()=>{
+      if(!('Notification' in window)){alert('Browser notifications are not supported here.');return}
+      const result=await Notification.requestPermission();
+      if(result==='granted') new Notification("Recovery dashboard notifications enabled",{body:"Keep this dashboard open for browser notifications."});
+    };
+
+    // Live Meal Train data — fetches mealtrain-data.json updated hourly by GitHub Actions
+    async function fetchMealTrainData(){
+      try{
+        const r=await fetch('mealtrain-data.json?t='+Date.now());
+        if(!r.ok)return;
+        const d=await r.json();
+        applyMealTrainData(d);
+      }catch(e){ /* silently keep static values */ }
+    }
+    function applyMealTrainData(d){
+      const DEPOSITS=50.98;
+      if(d.raised!=null){
+        const raised=d.raised;
+        const goal=d.goal||1000;
+        const pct=Math.min(100,(raised/goal)*100).toFixed(1);
+        const unrec=Math.max(0,raised-DEPOSITS).toFixed(2);
+        document.querySelector('#mt-raised').textContent='$'+raised.toFixed(2);
+        document.querySelector('#mt-raised-sub').textContent=(d.donors_count||'?')+' donors';
+        document.querySelector('#today-mt-raised').textContent='$'+raised.toFixed(0);
+        document.querySelector('#mt-unrec').textContent='$'+unrec;
+        document.querySelector('#mt-progress-pct').textContent=pct+'%';
+        document.querySelector('#mt-progress-bar').style.width=pct+'%';
+      }
+      if(d.open_slots!=null){
+        document.querySelector('#today-mt-slots').textContent=d.open_slots;
+        document.querySelector('#today-mt-slots-sub').textContent=d.all_booked?'All dates booked':d.open_slots+' slots open';
+      }
+      if(d.donors&&d.donors.length){
+        document.querySelector('#mt-donors').innerHTML=
+          d.donors.map(x=>`<li>${escHtml(x.name)} · $${x.amount}</li>`).join('')+
+          '<li class="muted small">Bank deposits confirmed: $16.28 + $34.70</li>';
+      }
+      if(d.fetched_at){
+        const ts=new Date(d.fetched_at);
+        document.querySelector('#mt-synced').textContent='Last synced: '+ts.toLocaleString();
+      }
+    }
+    function escHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+    renderChecks();renderRegular();renderPostMeds();renderHealth();
+    fetchMealTrainData();
+  </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "fetched_at": "2026-06-10T18:30:00Z",
+  "raised": 406,
+  "goal": 1000,
+  "donors_count": 5,
+  "all_booked": true,
+  "open_slots": 0,
+  "donors": [
+    {"name": "Anonymous", "amount": 50, "when": "17 hours ago"},
+    {"name": "Anonymous", "amount": 200, "when": "18 hours ago"},
+    {"name": "Avi Brown", "amount": 100, "when": "18 hours ago"},
+    {"name": "Anonymous", "amount": 38, "when": "3 months ago"},
+    {"name": "Sara Mayer-Fried", "amount": 18, "when": "3 months ago"}
+  ],
+  "meals": [],
+  "known_deposits": [16.28, 34.70]
+}
